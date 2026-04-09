@@ -19,7 +19,55 @@
         --enemy-accent: #d65b53;
         --player-accent: #4dbe9a;
         --hp-color: linear-gradient(90deg, #ff8476 0%, #d94848 100%);
-        --energy-color: linear-gradient(90deg, #ffe18a 0%, #e0aa2d 100%);
+        --state-damage-particle-fill: #ff9a72;
+        --state-damage-particle-shade: #8d2a21;
+        --state-damage-particle-glow: #ffd3bf;
+        --state-shield-bar-fill: linear-gradient(90deg, #ffe18a 0%, #e0aa2d 100%);
+        --state-shield-bar-text: #5f4519;
+        --state-shield-float-border: #fff1b9;
+        --state-shield-float-bg: #8a6111;
+        --state-shield-float-text: #fff9e8;
+        --state-shield-bloom:
+          radial-gradient(circle at 50% 50%, rgba(255, 235, 132, 0.74) 0 26%, rgba(255, 235, 132, 0) 26% 100%),
+          linear-gradient(135deg, rgba(255, 224, 98, 0) 0 30%, rgba(255, 224, 98, 0.42) 50%, rgba(255, 224, 98, 0) 70% 100%);
+        --state-shield-node-ring: rgba(255, 246, 206, 0.94);
+        --state-shield-node-shadow: rgba(181, 130, 28, 0.76);
+        --state-shield-bar-ring: rgba(255, 227, 123, 0.84);
+        --state-shield-scan: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 237, 154, 0.74) 46%, rgba(255, 255, 255, 0) 100%);
+        --state-shield-card-accent: #d19a23;
+        --state-shield-card-accent-strong: rgba(111, 77, 16, 0.88);
+        --state-shield-card-surface: linear-gradient(180deg, #fff6df 0%, #f0ddaa 100%);
+        --state-shield-card-copy: #35260a;
+        --state-shield-card-subtle: rgba(83, 59, 13, 0.72);
+        --state-shield-card-art-surface:
+          linear-gradient(135deg, rgba(255, 235, 146, 0.38) 0%, rgba(255, 235, 146, 0) 44%),
+          linear-gradient(160deg, #8b6412 0%, #382709 100%);
+        --state-shield-particle-fill: #ffe07a;
+        --state-shield-particle-shade: #8b6412;
+        --state-shield-particle-glow: #fff4bf;
+        --state-energy-bar-fill: linear-gradient(90deg, #b8eaff 0%, #4db8e8 100%);
+        --state-energy-bar-text: #163f58;
+        --state-energy-float-border: #d7f3ff;
+        --state-energy-float-bg: #1f5378;
+        --state-energy-float-text: #eefaff;
+        --state-energy-bloom:
+          radial-gradient(circle at 50% 50%, rgba(162, 227, 255, 0.68) 0 26%, rgba(162, 227, 255, 0) 26% 100%),
+          linear-gradient(90deg, rgba(126, 207, 255, 0) 0 30%, rgba(126, 207, 255, 0.36) 50%, rgba(126, 207, 255, 0) 70% 100%);
+        --state-energy-node-ring: rgba(225, 247, 255, 0.9);
+        --state-energy-node-shadow: rgba(38, 102, 150, 0.72);
+        --state-energy-bar-ring: rgba(119, 208, 255, 0.82);
+        --state-energy-scan: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(193, 235, 255, 0.68) 46%, rgba(255, 255, 255, 0) 100%);
+        --state-energy-card-accent: #3d86b5;
+        --state-energy-card-accent-strong: rgba(29, 72, 104, 0.88);
+        --state-energy-card-surface: linear-gradient(180deg, #eef6fb 0%, #cfe1ef 100%);
+        --state-energy-card-copy: #102334;
+        --state-energy-card-subtle: rgba(18, 43, 63, 0.7);
+        --state-energy-card-art-surface:
+          linear-gradient(135deg, rgba(124, 219, 255, 0.32) 0%, rgba(124, 219, 255, 0) 42%),
+          linear-gradient(160deg, #1d567d 0%, #0d2338 100%);
+        --state-energy-particle-fill: #8fdcff;
+        --state-energy-particle-shade: #1d567d;
+        --state-energy-particle-glow: #e3f7ff;
         --shadow: 4px 4px 0 rgba(20, 14, 27, 0.9);
         --pixel-border: 2px solid #241b2f;
         --pixel-grid:
@@ -165,15 +213,15 @@
       }
 
       .player-float.shield {
-        border-color: #d7f3ff;
-        background: #1f5378;
-        color: #eefaff;
+        border-color: var(--state-shield-float-border);
+        background: var(--state-shield-float-bg);
+        color: var(--state-shield-float-text);
       }
 
       .player-float.energy {
-        border-color: #fff1b9;
-        background: #8a6111;
-        color: #fff9e8;
+        border-color: var(--state-energy-float-border);
+        background: var(--state-energy-float-bg);
+        color: var(--state-energy-float-text);
       }
 
       .player-card.is-taking-hit {
@@ -196,9 +244,7 @@
       }
 
       .player-card.is-receiving-shield::after {
-        background:
-          radial-gradient(circle at 50% 50%, rgba(162, 227, 255, 0.68) 0 26%, rgba(162, 227, 255, 0) 26% 100%),
-          linear-gradient(90deg, rgba(126, 207, 255, 0) 0 30%, rgba(126, 207, 255, 0.36) 50%, rgba(126, 207, 255, 0) 70% 100%);
+        background: var(--state-shield-bloom);
         animation: shield-bloom 460ms cubic-bezier(0.16, 1, 0.3, 1);
       }
 
@@ -207,14 +253,12 @@
         animation: shield-node-pulse 460ms cubic-bezier(0.16, 1, 0.3, 1);
       }
 
-      .player-card.is-receiving-shield .hp-track {
+      .player-card.is-receiving-shield .shield-track {
         animation: shield-bar-pulse 460ms cubic-bezier(0.16, 1, 0.3, 1);
       }
 
       .player-card.is-receiving-energy::after {
-        background:
-          radial-gradient(circle at 50% 50%, rgba(255, 235, 132, 0.74) 0 26%, rgba(255, 235, 132, 0) 26% 100%),
-          linear-gradient(135deg, rgba(255, 224, 98, 0) 0 30%, rgba(255, 224, 98, 0.42) 50%, rgba(255, 224, 98, 0) 70% 100%);
+        background: var(--state-energy-bloom);
         animation: energy-bloom 500ms cubic-bezier(0.16, 1, 0.3, 1);
       }
 
@@ -253,9 +297,13 @@
         font-size: 8px;
       }
 
-      .player-card.self .player-meta {
-        gap: 4px;
+      .player-card.self .player-title {
+        gap: 8px;
+      }
+
+      .player-card.self .player-hand-inline {
         font-size: 6px;
+        padding: 1px 4px;
       }
 
       .player-card.self .status-group {
@@ -341,7 +389,7 @@
       .player-main {
         display: flex;
         flex-direction: column;
-        gap: 3px;
+        gap: 2px;
         flex: 1;
         min-width: 0;
       }
@@ -357,6 +405,13 @@
         pointer-events: none;
       }
 
+      .player-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+
       .player-name {
         margin: 0;
         font-size: 9px;
@@ -364,6 +419,23 @@
         letter-spacing: 0.04em;
         line-height: 1;
         text-transform: uppercase;
+        min-width: 0;
+      }
+
+      .player-hand-inline {
+        flex: 0 0 auto;
+        padding: 2px 5px;
+        border: var(--pixel-border);
+        background: #241b2f;
+        color: #fff6df;
+        font-size: 7px;
+        line-height: 1;
+        letter-spacing: 0.06em;
+        box-shadow: 2px 2px 0 rgba(20, 14, 27, 0.68);
+      }
+
+      .player-hand-inline strong {
+        font-weight: 800;
       }
 
       .player-meta {
@@ -377,10 +449,6 @@
 
       .intent-chip {
         color: #7f3941;
-      }
-
-      .shield-chip {
-        color: #2d6281;
       }
 
       .pile-row {
@@ -529,8 +597,12 @@
         background: var(--hp-color);
       }
 
+      .bar-fill.shield {
+        background: var(--state-shield-bar-fill);
+      }
+
       .bar-fill.energy {
-        background: var(--energy-color);
+        background: var(--state-energy-bar-fill);
       }
 
       .bar-value {
@@ -547,7 +619,12 @@
       }
 
       .bar-track.energy-track .bar-value {
-        color: #5f4519;
+        color: var(--state-energy-bar-text);
+        text-shadow: none;
+      }
+
+      .bar-track.shield-track .bar-value {
+        color: var(--state-shield-bar-text);
         text-shadow: none;
       }
 
@@ -827,25 +904,21 @@
       }
 
       .hand-card[data-card-kind="defend"] {
-        --card-accent: #3d86b5;
-        --card-accent-strong: rgba(29, 72, 104, 0.88);
-        --card-surface: linear-gradient(180deg, #eef6fb 0%, #cfe1ef 100%);
-        --card-copy: #102334;
-        --card-subtle: rgba(18, 43, 63, 0.7);
-        --card-art-surface:
-          linear-gradient(135deg, rgba(124, 219, 255, 0.32) 0%, rgba(124, 219, 255, 0) 42%),
-          linear-gradient(160deg, #1d567d 0%, #0d2338 100%);
+        --card-accent: var(--state-shield-card-accent);
+        --card-accent-strong: var(--state-shield-card-accent-strong);
+        --card-surface: var(--state-shield-card-surface);
+        --card-copy: var(--state-shield-card-copy);
+        --card-subtle: var(--state-shield-card-subtle);
+        --card-art-surface: var(--state-shield-card-art-surface);
       }
 
       .hand-card[data-card-kind="energize"] {
-        --card-accent: #d19a23;
-        --card-accent-strong: rgba(111, 77, 16, 0.88);
-        --card-surface: linear-gradient(180deg, #fff6df 0%, #f0ddaa 100%);
-        --card-copy: #35260a;
-        --card-subtle: rgba(83, 59, 13, 0.72);
-        --card-art-surface:
-          linear-gradient(135deg, rgba(255, 235, 146, 0.38) 0%, rgba(255, 235, 146, 0) 44%),
-          linear-gradient(160deg, #8b6412 0%, #382709 100%);
+        --card-accent: var(--state-energy-card-accent);
+        --card-accent-strong: var(--state-energy-card-accent-strong);
+        --card-surface: var(--state-energy-card-surface);
+        --card-copy: var(--state-energy-card-copy);
+        --card-subtle: var(--state-energy-card-subtle);
+        --card-art-surface: var(--state-energy-card-art-surface);
       }
 
       .hand-card + .hand-card {
@@ -1025,8 +1098,8 @@
         45% {
           transform: translate3d(0, -1px, 0) scale(1.03);
           box-shadow:
-            0 0 0 2px rgba(225, 247, 255, 0.9),
-            4px 4px 0 rgba(38, 102, 150, 0.72);
+            0 0 0 2px var(--state-shield-node-ring),
+            4px 4px 0 var(--state-shield-node-shadow);
         }
       }
 
@@ -1039,8 +1112,8 @@
         45% {
           transform: translate3d(0, -1px, 0) scale(1.035);
           box-shadow:
-            0 0 0 2px rgba(255, 246, 206, 0.94),
-            4px 4px 0 rgba(181, 130, 28, 0.76);
+            0 0 0 2px var(--state-energy-node-ring),
+            4px 4px 0 var(--state-energy-node-shadow);
         }
       }
 
@@ -1053,7 +1126,7 @@
         45% {
           box-shadow:
             inset 0 0 0 2px rgba(255, 247, 223, 0.38),
-            0 0 0 2px rgba(119, 208, 255, 0.82);
+            0 0 0 2px var(--state-shield-bar-ring);
           transform: scaleY(1.08);
         }
       }
@@ -1067,20 +1140,20 @@
         45% {
           box-shadow:
             inset 0 0 0 2px rgba(255, 247, 223, 0.38),
-            0 0 0 2px rgba(255, 227, 123, 0.84);
+            0 0 0 2px var(--state-energy-bar-ring);
           transform: scaleY(1.08);
         }
       }
 
-      .player-card.is-receiving-shield .hp-track::after {
+      .player-card.is-receiving-shield .shield-track::after {
         opacity: 1;
-        background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(193, 235, 255, 0.68) 46%, rgba(255, 255, 255, 0) 100%);
+        background: var(--state-shield-scan);
         animation: bar-scan 460ms cubic-bezier(0.16, 1, 0.3, 1);
       }
 
       .player-card.is-receiving-energy .energy-track::after {
         opacity: 1;
-        background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 237, 154, 0.74) 46%, rgba(255, 255, 255, 0) 100%);
+        background: var(--state-energy-scan);
         animation: bar-scan 500ms cubic-bezier(0.16, 1, 0.3, 1);
       }
 
@@ -1344,12 +1417,18 @@
         <div class="avatar" data-player-avatar aria-hidden="true">敌</div>
         <div class="player-info">
           <div class="player-main">
-            <p class="player-name" data-player-name>对手</p>
-            <div class="player-meta">
-              <span>手牌 <span data-player-hand>5</span></span>
-              <span class="shield-chip">护盾 <span data-player-shield>0</span></span>
+            <div class="player-title">
+              <p class="player-name" data-player-name>对手</p>
+              <span class="player-hand-inline">手牌 <strong data-player-hand>5</strong></span>
             </div>
             <div class="status-group">
+              <div class="status-row">
+                <div class="bar-track shield-track" data-bar-root="shield">
+                  <div class="bar-fill shield" data-bar-fill data-current="0" data-max="1"></div>
+                  <span class="bar-value" data-bar-text>0</span>
+                </div>
+                <span class="bar-label">SH</span>
+              </div>
               <div class="status-row">
                 <div class="bar-track hp-track" data-bar-root="hp">
                   <div class="bar-fill hp" data-bar-fill data-current="30" data-max="30"></div>
@@ -1410,12 +1489,18 @@
         <div class="avatar" data-player-avatar aria-hidden="true">我</div>
         <div class="player-info">
           <div class="player-main">
-            <p class="player-name" data-player-name>我方</p>
-            <div class="player-meta">
-              <span>手牌 <span data-player-hand>5</span></span>
-              <span class="shield-chip">护盾 <span data-player-shield>0</span></span>
+            <div class="player-title">
+              <p class="player-name" data-player-name>我方</p>
+              <span class="player-hand-inline">手牌 <strong data-player-hand>5</strong></span>
             </div>
             <div class="status-group">
+              <div class="status-row">
+                <div class="bar-track shield-track" data-bar-root="shield">
+                  <div class="bar-fill shield" data-bar-fill data-current="0" data-max="1"></div>
+                  <span class="bar-value" data-bar-text>0</span>
+                </div>
+                <span class="bar-label">SH</span>
+              </div>
               <div class="status-row">
                 <div class="bar-track hp-track" data-bar-root="hp">
                   <div class="bar-fill hp" data-bar-fill data-current="30" data-max="30"></div>

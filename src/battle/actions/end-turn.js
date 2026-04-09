@@ -1,7 +1,7 @@
 const { getEnemyIntentForState } = require("../enemy-intents");
 const { planEnemyTurn } = require("../enemy-ai");
 const { resolveCardEffect } = require("../cards/logic");
-const { TURN_DRAW_CAP } = require("../constants");
+const { PLAYER_MAX_EP_CAP, TURN_DRAW_CAP } = require("../constants");
 const { runDrawCards } = require("./draw-card");
 const { beginSelfTurn } = require("../turn-flow");
 const { resetShield } = require("../effects/health");
@@ -47,6 +47,7 @@ function runEndTurn(state, actorId) {
   self.ep = 0;
 
   resetShield(enemy);
+  enemy.maxEp = Math.min(PLAYER_MAX_EP_CAP, enemy.maxEp + 1);
   enemy.ep = enemy.maxEp;
 
   const enemyDrawnCards = runDrawCards(state, "enemy", state.nextTurnDrawCount, {

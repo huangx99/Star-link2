@@ -365,33 +365,66 @@ function normalizeParticleEffectType(effectType) {
   }
 }
 
-function getPixelParticlePalette(effectType) {
-  switch (normalizeParticleEffectType(effectType)) {
-    case "damage":
-      return {
+const stateThemeCache = new Map();
+
+function readStateThemeToken(name, fallback) {
+  const value = window.getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
+
+function getStateVisualTheme(effectType) {
+  const normalizedType = normalizeParticleEffectType(effectType);
+
+  if (stateThemeCache.has(normalizedType)) {
+    return stateThemeCache.get(normalizedType);
+  }
+
+  const fallbackThemes = {
+    damage: {
+      particle: {
         fill: "#ff9a72",
         shade: "#8d2a21",
         glow: "#ffd3bf",
-      };
-    case "shield":
-      return {
-        fill: "#8fdcff",
-        shade: "#1d567d",
-        glow: "#e3f7ff",
-      };
-    case "energy":
-      return {
+      },
+    },
+    shield: {
+      particle: {
         fill: "#ffe07a",
         shade: "#8b6412",
         glow: "#fff4bf",
-      };
-    default:
-      return {
+      },
+    },
+    energy: {
+      particle: {
+        fill: "#8fdcff",
+        shade: "#1d567d",
+        glow: "#e3f7ff",
+      },
+    },
+    default: {
+      particle: {
         fill: "#ffe596",
         shade: "#6b5530",
         glow: "#fff5cf",
-      };
-  }
+      },
+    },
+  };
+
+  const fallbackTheme = fallbackThemes[normalizedType] || fallbackThemes.default;
+  const theme = {
+    particle: {
+      fill: readStateThemeToken(`--state-${normalizedType}-particle-fill`, fallbackTheme.particle.fill),
+      shade: readStateThemeToken(`--state-${normalizedType}-particle-shade`, fallbackTheme.particle.shade),
+      glow: readStateThemeToken(`--state-${normalizedType}-particle-glow`, fallbackTheme.particle.glow),
+    },
+  };
+
+  stateThemeCache.set(normalizedType, theme);
+  return theme;
+}
+
+function getPixelParticlePalette(effectType) {
+  return getStateVisualTheme(effectType).particle;
 }
 
 function getParticleEffectProfile(effectType) {
@@ -1446,7 +1479,7 @@ function getStateEventTargetElement(role, eventType) {
   }
 
   if (eventType === "shield") {
-    return playerCard.querySelector("[data-player-shield]")?.closest(".shield-chip") || playerCard;
+    return playerCard.querySelector('[data-bar-root="shield"]') || playerCard;
   }
 
   if (eventType === "energy") {
@@ -2135,6 +2168,18 @@ function updateBar(barRoot, current, max) {
   text.textContent = `${safeCurrent} / ${safeMax}`;
 }
 
+function updateShieldBar(barRoot, value) {
+  const fill = barRoot.querySelector("[data-bar-fill]");
+  const text = barRoot.querySelector("[data-bar-text]");
+  const shieldValue = Math.max(0, Number(value) || 0);
+  const percent = shieldValue > 0 ? 100 : 0;
+
+  fill.style.width = `${percent}%`;
+  fill.dataset.current = String(shieldValue);
+  fill.dataset.max = "1";
+  text.textContent = String(shieldValue);
+}
+
 function updatePlayer(role, playerState, options = {}) {
   const card = document.querySelector(`[data-player="${role}"]`);
 
@@ -2151,7 +2196,7 @@ function updatePlayer(role, playerState, options = {}) {
   const discardNode = card.querySelector("[data-player-discard]");
   const discardStackNode = card.querySelector("[data-player-discard-stack]");
   const handNode = card.querySelector("[data-player-hand]");
-  const shieldNode = card.querySelector("[data-player-shield]");
+  const shieldBar = card.querySelector('[data-bar-root="shield"]');
   const hpBar = card.querySelector('[data-bar-root="hp"]');
   const epBar = card.querySelector('[data-bar-root="ep"]');
   const maxDeckSize = 30;
@@ -2165,8 +2210,8 @@ function updatePlayer(role, playerState, options = {}) {
   discardNode.textContent = String(playerState.discardCount);
   discardStackNode.style.setProperty("--deck-depth", String(discardDepth));
   handNode.textContent = String(playerState.hand?.length ?? playerState.handCount);
-  if (shieldNode) {
-    shieldNode.textContent = String(playerState.shield ?? 0);
+  if (shieldBar) {
+    updateShieldBar(shieldBar, playerState.shield ?? 0);
   }
   if (renderHandCards) {
     renderHand(role, playerState.hand);

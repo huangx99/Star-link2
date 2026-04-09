@@ -1,4 +1,4 @@
-const { TURN_DRAW_CAP } = require("./constants");
+const { PLAYER_MAX_EP_CAP, TURN_DRAW_CAP } = require("./constants");
 const { runDrawCards } = require("./actions/draw-card");
 const { resetShield } = require("./effects/health");
 const { getEnemyIntentForState } = require("./enemy-intents");
@@ -10,6 +10,7 @@ function beginSelfTurn(state, options = {}) {
   let drawnCards = [];
 
   resetShield(self);
+  self.maxEp = Math.min(PLAYER_MAX_EP_CAP, self.maxEp + 1);
   self.ep = self.maxEp;
   state.currentTurn = "self";
 

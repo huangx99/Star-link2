@@ -1,4 +1,4 @@
-const { PLAYER_DECK_SIZE } = require("./constants");
+const { PLAYER_DECK_SIZE, PLAYER_MAX_EP_CAP } = require("./constants");
 const { createCard } = require("./cards/factory");
 const { gainEnergy } = require("./effects/energy");
 
@@ -182,6 +182,7 @@ function planEnemyTurn(state, options = {}) {
   const enemy = structuredClone(state.players.enemy);
   const self = structuredClone(state.players.self);
 
+  enemy.maxEp = Math.min(PLAYER_MAX_EP_CAP, enemy.maxEp + 1);
   enemy.ep = enemy.maxEp;
   enemy.shield = 0;
 
