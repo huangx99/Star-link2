@@ -1,9 +1,10 @@
 const { getEnemyIntentForState } = require("../enemy-intents");
 const { planEnemyTurn } = require("../enemy-ai");
 const { resolveCardEffect } = require("../cards/logic");
-const { PLAYER_MAX_EP_CAP, TURN_DRAW_CAP } = require("../constants");
+const { PLAYER_MAX_EP_CAP, TURN_DRAW_CAP, TURN_END_HAND_LIMIT } = require("../constants");
 const { runDrawCards } = require("./draw-card");
 const { beginSelfTurn } = require("../turn-flow");
+const { discardRandomCardsToLimit } = require("./discard-card");
 const { resetShield } = require("../effects/health");
 
 function formatEnemyTurnSummary(enemy, target, plays = []) {
@@ -42,6 +43,8 @@ function runEndTurn(state, actorId) {
   if (state.currentTurn !== "self") {
     throw new Error("当前不是我方回合");
   }
+
+  const selfDiscardedCards = discardRandomCardsToLimit(state, "self", TURN_END_HAND_LIMIT);
 
   state.currentTurn = "enemy";
   self.ep = 0;
@@ -84,16 +87,20 @@ function runEndTurn(state, actorId) {
   }
 
   const summary = formatEnemyTurnSummary(enemy, self, plays);
+  const selfDiscardSummary = selfDiscardedCards.length
+    ? `${self.name}随机弃置${selfDiscardedCards.length}张手牌`
+    : "";
 
   if (self.hp <= 0) {
     state.winner = "enemy";
     state.currentTurn = null;
     state.enemyIntent = null;
+    const parts = [selfDiscardSummary, summary, `${self.name}被击败`].filter(Boolean);
     state.lastAction = {
       type: "enemy-turn",
       actorId: "enemy",
       targetId: "self",
-      summary: `${summary}，${self.name}被击败`,
+      summary: parts.join("，"),
       enemyTurn: {
         draws: enemyDrawnCards.map((card) => ({
           cardId: card.id,
@@ -101,23 +108,52 @@ function runEndTurn(state, actorId) {
         })),
         plays,
       },
+      selfDiscard: {
+        cards: selfDiscardedCards.map((card) => ({
+          cardId: card.id,
+          card,
+        })),
+      },
     };
     return state;
   }
 
+  const enemyDiscardedCards = discardRandomCardsToLimit(state, "enemy", TURN_END_HAND_LIMIT);
+  const enemyDiscardSummary = enemyDiscardedCards.length
+    ? `${enemy.name}随机弃置${enemyDiscardedCards.length}张手牌`
+    : "";
+
   state.turn += 1;
   const { drawnCards: selfDrawnCards } = beginSelfTurn(state, { drawCard: true, suppressLastAction: true });
+  const summaryParts = [selfDiscardSummary, summary, enemyDiscardSummary];
+
+  if (selfDrawnCards.length) {
+    summaryParts.push(`${self.name}抽了${selfDrawnCards.length}张牌`);
+  }
+
   state.lastAction = {
     type: "enemy-turn",
     actorId: "enemy",
     targetId: "self",
-    summary: selfDrawnCards.length ? `${summary}，${self.name}抽了${selfDrawnCards.length}张牌` : summary,
+    summary: summaryParts.filter(Boolean).join("，"),
     enemyTurn: {
       draws: enemyDrawnCards.map((card) => ({
         cardId: card.id,
         card,
       })),
       plays,
+    },
+    selfDiscard: {
+      cards: selfDiscardedCards.map((card) => ({
+        cardId: card.id,
+        card,
+      })),
+    },
+    enemyDiscard: {
+      cards: enemyDiscardedCards.map((card) => ({
+        cardId: card.id,
+        card,
+      })),
     },
     selfDraw: {
       cards: selfDrawnCards.map((card) => ({

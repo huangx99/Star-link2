@@ -1666,6 +1666,54 @@ function removeCardFromHandState(state, role, cardId, options = {}) {
   return removedCard;
 }
 
+async function animateHandDiscards(role, stagedState, discardEntries = []) {
+  if (!discardEntries.length) {
+    return stagedState;
+  }
+
+  let nextStagedState = structuredClone(stagedState);
+
+  for (const discard of discardEntries) {
+    const cardId = discard?.cardId;
+    const handRoot = document.querySelector(`[data-hand="${role}"]`);
+    const cardNode =
+      handRoot?.querySelector(`[data-card-id="${cardId}"]`) || handRoot?.querySelector(".hand-card");
+    const discardedState = structuredClone(nextStagedState);
+    const removedCard = removeCardFromHandState(discardedState, role, cardId, { discard: true });
+
+    if (!removedCard) {
+      continue;
+    }
+
+    if (!cardNode) {
+      nextStagedState = discardedState;
+      currentBattleState = nextStagedState;
+      updatePlayer(role, nextStagedState.players[role]);
+      continue;
+    }
+
+    const shatterAnimation = animateCardShatterToDiscard(cardNode, {
+      targetRole: role,
+    });
+
+    await Promise.all([
+      shatterAnimation,
+      animateHandReflow(
+        role,
+        nextStagedState?.players?.[role]?.hand ?? [],
+        discardedState.players[role].hand,
+        shatterAnimation.totalDuration
+      ),
+    ]);
+
+    nextStagedState = discardedState;
+    currentBattleState = nextStagedState;
+    updatePlayer(role, nextStagedState.players[role]);
+  }
+
+  return nextStagedState;
+}
+
 async function animateEnemyPlay(previousState, nextState, play) {
   const handRoot = document.querySelector('[data-hand="enemy"]');
   const sourceCard =
@@ -1791,12 +1839,23 @@ async function animateEnemyTurn(previousState, nextState) {
   }
 
   let stagedState = structuredClone(previousState);
+  const selfDiscards = nextState?.lastAction?.selfDiscard?.cards ?? [];
+  const enemyDiscards = nextState?.lastAction?.enemyDiscard?.cards ?? [];
+  const selfDraws = nextState?.lastAction?.selfDraw?.cards ?? [];
+
+  if (selfDiscards.length) {
+    setBattleStatus(`${stagedState.players.self.name}随机弃置${selfDiscards.length}张手牌`, "info");
+    stagedState = await animateHandDiscards("self", stagedState, selfDiscards);
+    await new Promise((resolve) => window.setTimeout(resolve, 180));
+  }
+
   stagedState.currentTurn = "enemy";
   stagedState.players.self.ep = 0;
   stagedState.players.enemy.maxEp = nextState.players.enemy.maxEp;
   stagedState.players.enemy.ep = nextState.players.enemy.maxEp;
   stagedState.players.enemy.shield = 0;
-  currentBattleState = stagedState;
+  renderBattleState(stagedState);
+  setBattleStatus("对手回合中", "info");
 
   const enemyDraws = enemyTurn.draws ?? (enemyTurn.draw?.card ? [enemyTurn.draw] : []);
 
@@ -1841,7 +1900,11 @@ async function animateEnemyTurn(previousState, nextState) {
     currentBattleState = stagedState;
   }
 
-  const selfDraws = nextState?.lastAction?.selfDraw?.cards ?? [];
+  if (enemyDiscards.length) {
+    setBattleStatus(`${stagedState.players.enemy.name}随机弃置${enemyDiscards.length}张手牌`, "info");
+    stagedState = await animateHandDiscards("enemy", stagedState, enemyDiscards);
+    await new Promise((resolve) => window.setTimeout(resolve, 180));
+  }
 
   if (selfDraws.length) {
     let beforeSelfDrawState = structuredClone(nextState);

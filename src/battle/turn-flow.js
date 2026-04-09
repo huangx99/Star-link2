@@ -1,5 +1,6 @@
-const { PLAYER_MAX_EP_CAP, TURN_DRAW_CAP } = require("./constants");
+const { PLAYER_MAX_EP_CAP, TURN_DRAW_CAP, TURN_END_HAND_LIMIT } = require("./constants");
 const { runDrawCards } = require("./actions/draw-card");
+const { discardRandomCardsToLimit } = require("./actions/discard-card");
 const { resetShield } = require("./effects/health");
 const { getEnemyIntentForState } = require("./enemy-intents");
 
@@ -8,6 +9,15 @@ function beginSelfTurn(state, options = {}) {
   const self = state.players.self;
   const parts = [];
   let drawnCards = [];
+  let discardedCards = [];
+
+  if (state.currentTurn === "self") {
+    discardedCards = discardRandomCardsToLimit(state, "self", TURN_END_HAND_LIMIT);
+
+    if (discardedCards.length) {
+      parts.push(`${self.name}随机弃置${discardedCards.length}张手牌`);
+    }
+  }
 
   resetShield(self);
   self.maxEp = Math.min(PLAYER_MAX_EP_CAP, self.maxEp + 1);
@@ -39,12 +49,14 @@ function beginSelfTurn(state, options = {}) {
       actorId: "self",
       targetId: "self",
       summary,
+      discardedCards,
     };
   }
 
   return {
     state,
     drawnCards,
+    discardedCards,
     summary,
   };
 }
