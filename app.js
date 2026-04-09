@@ -1072,6 +1072,7 @@ async function animateDrawToHand(role, previousState, nextState) {
 
 function animateCardShatterToDiscard(card, options = {}) {
   const { targetRole = "self", hideCardFirst = false, targetDescriptors = [] } = options;
+  const shouldRestoreCardVisibility = !hideCardFirst;
   const targetPile = document.querySelector(
     `[data-player="${targetRole}"] [data-player-discard-stack]`
   );
@@ -1330,8 +1331,12 @@ function animateCardShatterToDiscard(card, options = {}) {
     card.classList.remove("is-shattering");
     card.style.removeProperty("--drag-x");
     card.style.removeProperty("--drag-y");
-    card.style.removeProperty("opacity");
-    card.style.removeProperty("visibility");
+
+    if (shouldRestoreCardVisibility) {
+      card.style.removeProperty("opacity");
+      card.style.removeProperty("visibility");
+    }
+
     resetFxCanvas();
   });
 
