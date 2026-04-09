@@ -32,10 +32,9 @@ function resolveCardEffect(actor, target, card) {
         targetRole: actor.id,
       };
     case "energize":
-      gainEnergy(actor, card.energyGain);
       return {
         kind: "energize",
-        energyGain: card.energyGain,
+        energyGain: gainEnergy(actor, card.energyGain),
         targetRole: actor.id,
       };
     default:

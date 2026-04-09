@@ -37,6 +37,42 @@ function runDrawCard(state, actorId, options = {}) {
   return state;
 }
 
+function runDrawCards(state, actorId, count, options = {}) {
+  const drawCount = Math.max(0, Number(count) || 0);
+  const actor = state.players[actorId];
+  const { suppressLastAction = false } = options;
+  const drawnCards = [];
+
+  if (!actor) {
+    throw new Error("Invalid draw actor");
+  }
+
+  for (let index = 0; index < drawCount; index += 1) {
+    try {
+      runDrawCard(state, actorId, { suppressLastAction: true });
+      drawnCards.push(actor.hand[actor.hand.length - 1] || null);
+    } catch (error) {
+      if (/已无/.test(error.message)) {
+        break;
+      }
+
+      throw error;
+    }
+  }
+
+  if (!suppressLastAction && drawnCards.length) {
+    state.lastAction = {
+      type: "draw-card",
+      actorId,
+      targetId: actorId,
+      summary: `${actor.name} 抽了 ${drawnCards.length} 张牌`,
+    };
+  }
+
+  return drawnCards.filter(Boolean);
+}
+
 module.exports = {
   runDrawCard,
+  runDrawCards,
 };

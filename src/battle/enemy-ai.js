@@ -1,12 +1,26 @@
-const { PLAYER_DECK_SIZE, PLAYER_MAX_EP_CAP } = require("./constants");
+const { PLAYER_DECK_SIZE } = require("./constants");
 const { createCard } = require("./cards/factory");
+const { gainEnergy } = require("./effects/energy");
 
-function peekNextDrawCard(player) {
-  if (!player || player.deckSize <= 0 || player.nextCardNumber > PLAYER_DECK_SIZE) {
-    return null;
+function peekNextDrawCards(player, count = 1) {
+  if (!player) {
+    return [];
   }
 
-  return createCard(player.id, player.nextCardNumber);
+  const drawCount = Math.max(0, Number(count) || 0);
+  const cards = [];
+
+  for (let index = 0; index < drawCount; index += 1) {
+    const serial = (player.nextCardNumber || 0) + index;
+
+    if (player.deckSize - index <= 0 || serial > PLAYER_DECK_SIZE) {
+      break;
+    }
+
+    cards.push(createCard(player.id, serial));
+  }
+
+  return cards;
 }
 
 function createSimState(actor, target) {
@@ -70,9 +84,7 @@ function applySimulatedCard(simState, card) {
       nextState.totalBlock += play.block;
       break;
     case "energize": {
-      const beforeEnergy = actor.ep;
-      actor.ep = Math.min(actor.maxEp, actor.ep + Math.max(0, card.energyGain ?? 0));
-      play.energyGain = actor.ep - beforeEnergy;
+      play.energyGain = gainEnergy(actor, card.energyGain ?? 0);
       nextState.totalEnergyGain += play.energyGain;
       break;
     }
@@ -166,24 +178,21 @@ function formatIntent(plan) {
 
 function planEnemyTurn(state, options = {}) {
   const simulateDraw = options.simulateDraw !== false;
+  const drawCount = Math.max(0, Number(options.drawCount ?? state.nextTurnDrawCount ?? 1) || 0);
   const enemy = structuredClone(state.players.enemy);
   const self = structuredClone(state.players.self);
 
-  enemy.maxEp = Math.min(PLAYER_MAX_EP_CAP, enemy.maxEp + 1);
   enemy.ep = enemy.maxEp;
   enemy.shield = 0;
 
-  let drawnCard = null;
+  let drawnCards = [];
 
   if (simulateDraw) {
-    drawnCard = peekNextDrawCard(enemy);
-
-    if (drawnCard) {
-      enemy.hand.push(drawnCard);
-      enemy.handCount = enemy.hand.length;
-      enemy.deckSize = Math.max(0, enemy.deckSize - 1);
-      enemy.nextCardNumber += 1;
-    }
+    drawnCards = peekNextDrawCards(enemy, drawCount);
+    enemy.hand.push(...drawnCards);
+    enemy.handCount = enemy.hand.length;
+    enemy.deckSize = Math.max(0, enemy.deckSize - drawnCards.length);
+    enemy.nextCardNumber += drawnCards.length;
   }
 
   const context = {
@@ -193,12 +202,10 @@ function planEnemyTurn(state, options = {}) {
   const bestState = searchBestSequence(createSimState(enemy, self), context);
 
   return {
-    draw: drawnCard
-      ? {
-          cardId: drawnCard.id,
-          card: drawnCard,
-        }
-      : null,
+    draws: drawnCards.map((card) => ({
+      cardId: card.id,
+      card,
+    })),
     plays: bestState.plays,
     intent: formatIntent(bestState),
   };

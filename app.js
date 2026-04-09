@@ -1765,9 +1765,15 @@ async function animateEnemyTurn(previousState, nextState) {
   stagedState.players.enemy.shield = 0;
   currentBattleState = stagedState;
 
-  if (enemyTurn.draw?.card) {
+  const enemyDraws = enemyTurn.draws ?? (enemyTurn.draw?.card ? [enemyTurn.draw] : []);
+
+  for (const draw of enemyDraws) {
+    if (!draw?.card) {
+      continue;
+    }
+
     const enemyDrawState = structuredClone(stagedState);
-    addCardToHandState(enemyDrawState, "enemy", enemyTurn.draw.card);
+    addCardToHandState(enemyDrawState, "enemy", draw.card);
     await animateDrawToHand("enemy", stagedState, enemyDrawState);
     stagedState = enemyDrawState;
     currentBattleState = stagedState;
@@ -1802,12 +1808,29 @@ async function animateEnemyTurn(previousState, nextState) {
     currentBattleState = stagedState;
   }
 
-  if (nextState?.lastAction?.selfDraw?.cardId) {
-    const beforeSelfDrawState = structuredClone(nextState);
-    removeCardFromHandState(beforeSelfDrawState, "self", nextState.lastAction.selfDraw.cardId);
-    beforeSelfDrawState.players.self.deckSize += 1;
+  const selfDraws = nextState?.lastAction?.selfDraw?.cards ?? [];
+
+  if (selfDraws.length) {
+    let beforeSelfDrawState = structuredClone(nextState);
+
+    [...selfDraws].reverse().forEach((draw) => {
+      removeCardFromHandState(beforeSelfDrawState, "self", draw.cardId);
+      beforeSelfDrawState.players.self.deckSize += 1;
+    });
+
     renderBattleState(beforeSelfDrawState);
-    await animateDrawToHand("self", beforeSelfDrawState, nextState);
+
+    for (const draw of selfDraws) {
+      if (!draw?.card) {
+        continue;
+      }
+
+      const selfDrawState = structuredClone(beforeSelfDrawState);
+      addCardToHandState(selfDrawState, "self", draw.card);
+      await animateDrawToHand("self", beforeSelfDrawState, selfDrawState);
+      beforeSelfDrawState = selfDrawState;
+    }
+
     return;
   }
 
@@ -2101,8 +2124,10 @@ function updateBar(barRoot, current, max) {
   const fill = barRoot.querySelector("[data-bar-fill]");
   const text = barRoot.querySelector("[data-bar-text]");
   const safeMax = Number(max) > 0 ? Number(max) : 1;
-  const safeCurrent = Math.max(0, Math.min(Number(current), safeMax));
-  const percent = (safeCurrent / safeMax) * 100;
+  const numericCurrent = Number(current) || 0;
+  const safeCurrent = Math.max(0, numericCurrent);
+  const fillCurrent = Math.min(safeCurrent, safeMax);
+  const percent = (fillCurrent / safeMax) * 100;
 
   fill.style.width = `${percent}%`;
   fill.dataset.current = String(safeCurrent);

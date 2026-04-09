@@ -1,5 +1,7 @@
+const { PLAYER_MAX_EP_CAP } = require("../constants");
+
 function clampEnergy(player) {
-  player.ep = Math.max(0, Math.min(player.maxEp, player.ep));
+  player.ep = Math.max(0, Math.min(PLAYER_MAX_EP_CAP, Number(player.ep) || 0));
   return player;
 }
 
@@ -9,8 +11,10 @@ function spendEnergy(player, amount) {
 }
 
 function gainEnergy(player, amount) {
+  const beforeEnergy = Math.max(0, Math.min(PLAYER_MAX_EP_CAP, Number(player.ep) || 0));
   player.ep += Math.max(0, amount);
-  return clampEnergy(player);
+  clampEnergy(player);
+  return player.ep - beforeEnergy;
 }
 
 function hasEnoughEnergy(player, amount) {

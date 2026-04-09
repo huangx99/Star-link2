@@ -1,9 +1,9 @@
 const { getEnemyIntentForState } = require("../enemy-intents");
 const { planEnemyTurn } = require("../enemy-ai");
 const { resolveCardEffect } = require("../cards/logic");
-const { runDrawCard } = require("./draw-card");
+const { TURN_DRAW_CAP } = require("../constants");
+const { runDrawCards } = require("./draw-card");
 const { beginSelfTurn } = require("../turn-flow");
-const { PLAYER_MAX_EP_CAP } = require("../constants");
 const { resetShield } = require("../effects/health");
 
 function formatEnemyTurnSummary(enemy, target, plays = []) {
@@ -47,19 +47,12 @@ function runEndTurn(state, actorId) {
   self.ep = 0;
 
   resetShield(enemy);
-  enemy.maxEp = Math.min(PLAYER_MAX_EP_CAP, enemy.maxEp + 1);
   enemy.ep = enemy.maxEp;
 
-  let enemyDrawnCard = null;
-
-  try {
-    runDrawCard(state, "enemy", { suppressLastAction: true });
-    enemyDrawnCard = enemy.hand[enemy.hand.length - 1] || null;
-  } catch (error) {
-    if (!/已无/.test(error.message)) {
-      throw error;
-    }
-  }
+  const enemyDrawnCards = runDrawCards(state, "enemy", state.nextTurnDrawCount, {
+    suppressLastAction: true,
+  });
+  state.nextTurnDrawCount = Math.min(TURN_DRAW_CAP, state.nextTurnDrawCount + 1);
 
   const plan = planEnemyTurn(state, { simulateDraw: false });
   const plays = [];
@@ -101,12 +94,10 @@ function runEndTurn(state, actorId) {
       targetId: "self",
       summary: `${summary}，${self.name}被击败`,
       enemyTurn: {
-        draw: enemyDrawnCard
-          ? {
-              cardId: enemyDrawnCard.id,
-              card: enemyDrawnCard,
-            }
-          : null,
+        draws: enemyDrawnCards.map((card) => ({
+          cardId: card.id,
+          card,
+        })),
         plays,
       },
     };
@@ -114,26 +105,25 @@ function runEndTurn(state, actorId) {
   }
 
   state.turn += 1;
-  const { drawnCard: selfDrawnCard } = beginSelfTurn(state, { drawCard: true, suppressLastAction: true });
+  const { drawnCards: selfDrawnCards } = beginSelfTurn(state, { drawCard: true, suppressLastAction: true });
   state.lastAction = {
     type: "enemy-turn",
     actorId: "enemy",
     targetId: "self",
-    summary: selfDrawnCard ? `${summary}，${self.name}抽了1张牌` : summary,
+    summary: selfDrawnCards.length ? `${summary}，${self.name}抽了${selfDrawnCards.length}张牌` : summary,
     enemyTurn: {
-      draw: enemyDrawnCard
-        ? {
-            cardId: enemyDrawnCard.id,
-            card: enemyDrawnCard,
-          }
-        : null,
+      draws: enemyDrawnCards.map((card) => ({
+        cardId: card.id,
+        card,
+      })),
       plays,
     },
-    selfDraw: selfDrawnCard
-      ? {
-          cardId: selfDrawnCard.id,
-        }
-      : null,
+    selfDraw: {
+      cards: selfDrawnCards.map((card) => ({
+        cardId: card.id,
+        card,
+      })),
+    },
   };
   state.enemyIntent = getEnemyIntentForState(state);
   return state;

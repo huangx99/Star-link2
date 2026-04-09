@@ -35,6 +35,7 @@ function createBattleState() {
   const battleState = {
     turn: 1,
     currentTurn: "self",
+    nextTurnDrawCount: 1,
     winner: null,
     enemyIntent: null,
     lastAction: {
