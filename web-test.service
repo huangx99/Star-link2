@@ -1,0 +1,16 @@
+[Unit]
+Description=Star-link2 web page for FRP
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/huangxuan/data/codex/Star-link2
+Environment=HOST=127.0.0.1
+Environment=PORT=9910
+ExecStart=/usr/bin/node /home/huangxuan/data/codex/Star-link2/server.js
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

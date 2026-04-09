@@ -1,0 +1,1455 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>双人对战</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg-top: #2b2740;
+        --bg-bottom: #171522;
+        --panel: #f6e7b5;
+        --panel-border: #3b2f4a;
+        --text-main: #241b2f;
+        --text-muted: #6b5d72;
+        --enemy-accent: #d65b53;
+        --player-accent: #4dbe9a;
+        --hp-color: linear-gradient(90deg, #ff8476 0%, #d94848 100%);
+        --energy-color: linear-gradient(90deg, #ffe18a 0%, #e0aa2d 100%);
+        --shadow: 4px 4px 0 rgba(20, 14, 27, 0.9);
+        --pixel-border: 2px solid #241b2f;
+        --pixel-grid:
+          linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+        --safe-top: env(safe-area-inset-top, 0px);
+        --safe-right: env(safe-area-inset-right, 0px);
+        --safe-bottom: env(safe-area-inset-bottom, 0px);
+        --safe-left: env(safe-area-inset-left, 0px);
+      }
+
+      * {
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 50% 24%, rgba(255, 231, 150, 0.14) 0 12%, transparent 12% 100%),
+          linear-gradient(180deg, #342e55 0%, var(--bg-top) 36%, #201b31 36%, #201b31 64%, var(--bg-bottom) 64%, #0f0d17 100%);
+        background-size:
+          100% 100%,
+          100% 100%;
+        color: var(--text-main);
+        font-family: "Fusion Pixel 12px Monospaced SC", "Press Start 2P", monospace;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+        touch-action: manipulation;
+        image-rendering: pixelated;
+      }
+
+      .game-screen {
+        position: relative;
+        width: 100vw;
+        max-width: 430px;
+        min-height: 100vh;
+        margin: 0 auto;
+        padding:
+          calc(var(--safe-top) + 10px)
+          calc(var(--safe-right) + 10px)
+          calc(var(--safe-bottom) + 10px)
+          calc(var(--safe-left) + 10px);
+        overflow: hidden;
+        touch-action: manipulation;
+        background-image: var(--pixel-grid);
+        background-size: 10px 10px, 10px 10px;
+      }
+
+      .arena-glow {
+        position: absolute;
+        inset: 18% auto auto 50%;
+        width: 280px;
+        height: 280px;
+        transform: translateX(-50%);
+        background:
+          radial-gradient(circle, rgba(255, 220, 110, 0.18) 0 32%, rgba(255, 220, 110, 0) 32% 100%);
+        pointer-events: none;
+        image-rendering: pixelated;
+        opacity: 0.8;
+      }
+
+      .fx-layer {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 0;
+        height: 0;
+        overflow: hidden;
+        pointer-events: none;
+        z-index: 20000;
+      }
+
+      .player-card {
+        position: absolute;
+        left: 10px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        width: min(calc(100% - 20px), 392px);
+        isolation: isolate;
+        z-index: 40;
+      }
+
+      .player-card > * {
+        position: relative;
+        z-index: 1;
+      }
+
+      .player-card::after {
+        content: "";
+        position: absolute;
+        inset: -8px;
+        opacity: 0;
+        pointer-events: none;
+        will-change: transform, opacity;
+      }
+
+      .player-float {
+        position: absolute;
+        left: 0;
+        top: 0;
+        z-index: 28000;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 44px;
+        padding: 3px 6px;
+        border: 2px solid #fff4d6;
+        background: #241b2f;
+        color: #fffaf2;
+        font-size: 8px;
+        font-weight: 800;
+        line-height: 1;
+        letter-spacing: 0.04em;
+        text-shadow: none;
+        box-shadow:
+          0 0 0 2px rgba(36, 27, 47, 0.9),
+          3px 3px 0 rgba(20, 14, 27, 0.82);
+        pointer-events: none;
+        opacity: 0;
+        will-change: transform, opacity;
+        transform: translate3d(var(--float-x, 0px), var(--float-y, 0px), 0) scale(0.9);
+        animation: player-float-rise 820ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+
+      .player-float.enemy {
+        --float-drift-start: 8px;
+        --float-drift-end: -20px;
+      }
+
+      .player-float.self {
+        --float-drift-start: 6px;
+        --float-drift-end: -22px;
+      }
+
+      .player-float.damage {
+        border-color: #ffd1c7;
+        background: #6f241d;
+        color: #fff4ef;
+      }
+
+      .player-float.shield {
+        border-color: #d7f3ff;
+        background: #1f5378;
+        color: #eefaff;
+      }
+
+      .player-float.energy {
+        border-color: #fff1b9;
+        background: #8a6111;
+        color: #fff9e8;
+      }
+
+      .player-card.is-taking-hit {
+        animation: player-hit-shake 240ms cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      .player-card.is-taking-hit::after {
+        background:
+          radial-gradient(circle at 50% 50%, rgba(255, 173, 145, 0.66) 0 18%, rgba(255, 173, 145, 0) 18% 100%),
+          linear-gradient(90deg, rgba(255, 93, 70, 0) 0 10%, rgba(255, 93, 70, 0.42) 10% 18%, rgba(255, 93, 70, 0) 18% 100%);
+        animation: player-hit-flare 240ms steps(3, end);
+      }
+
+      .player-card.is-taking-hit .avatar,
+      .player-card.is-taking-hit .player-info {
+        filter: saturate(1.34) brightness(1.14);
+        box-shadow:
+          0 0 0 2px rgba(255, 222, 207, 0.72),
+          6px 6px 0 rgba(151, 44, 36, 0.7);
+      }
+
+      .player-card.is-receiving-shield::after {
+        background:
+          radial-gradient(circle at 50% 50%, rgba(162, 227, 255, 0.68) 0 26%, rgba(162, 227, 255, 0) 26% 100%),
+          linear-gradient(90deg, rgba(126, 207, 255, 0) 0 30%, rgba(126, 207, 255, 0.36) 50%, rgba(126, 207, 255, 0) 70% 100%);
+        animation: shield-bloom 460ms cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .player-card.is-receiving-shield .avatar,
+      .player-card.is-receiving-shield .player-info {
+        animation: shield-node-pulse 460ms cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .player-card.is-receiving-shield .hp-track {
+        animation: shield-bar-pulse 460ms cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .player-card.is-receiving-energy::after {
+        background:
+          radial-gradient(circle at 50% 50%, rgba(255, 235, 132, 0.74) 0 26%, rgba(255, 235, 132, 0) 26% 100%),
+          linear-gradient(135deg, rgba(255, 224, 98, 0) 0 30%, rgba(255, 224, 98, 0.42) 50%, rgba(255, 224, 98, 0) 70% 100%);
+        animation: energy-bloom 500ms cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .player-card.is-receiving-energy .avatar,
+      .player-card.is-receiving-energy .player-info {
+        animation: energy-node-pulse 500ms cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .player-card.is-receiving-energy .energy-track {
+        animation: energy-bar-surge 500ms cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .player-card.enemy {
+        top: 10px;
+      }
+
+      .player-card.self {
+        bottom: 10px;
+        width: min(calc(100% - 156px), 246px);
+        gap: 3px;
+      }
+
+      .player-card.self .avatar {
+        flex-basis: 32px;
+        width: 32px;
+        height: 32px;
+        font-size: 11px;
+      }
+
+      .player-card.self .player-info {
+        min-height: 36px;
+        padding: 4px 6px 4px 15px;
+      }
+
+      .player-card.self .player-name {
+        font-size: 8px;
+      }
+
+      .player-card.self .player-meta {
+        gap: 4px;
+        font-size: 6px;
+      }
+
+      .player-card.self .status-group {
+        gap: 2px;
+      }
+
+      .player-card.self .status-row {
+        gap: 2px;
+      }
+
+      .player-card.self .bar-track {
+        height: 12px;
+      }
+
+      .player-card.self .bar-label,
+      .player-card.self .bar-value {
+        font-size: 7px;
+      }
+
+      .player-card.self .deck-zone {
+        width: 34px;
+        flex-basis: 34px;
+      }
+
+      .player-card.self .deck-stack {
+        width: 28px;
+        height: 42px;
+      }
+
+      .player-card.self .deck-face,
+      .player-card.self .deck-count {
+        font-size: 6px;
+      }
+
+      .player-card.self .deck-count {
+        right: -4px;
+        bottom: -5px;
+        min-width: 16px;
+        padding: 1px 3px;
+      }
+
+      .avatar {
+        display: grid;
+        place-items: center;
+        flex: 0 0 38px;
+        width: 38px;
+        height: 38px;
+        border: var(--pixel-border);
+        color: #fff9f2;
+        font-size: 12px;
+        font-weight: 700;
+        box-shadow: 3px 3px 0 rgba(20, 14, 27, 0.75);
+        position: relative;
+        z-index: 2;
+        text-shadow: 2px 2px 0 rgba(20, 14, 27, 0.5);
+      }
+
+      .enemy .avatar {
+        background:
+          linear-gradient(180deg, #f18a7b 0 50%, var(--enemy-accent) 50% 100%);
+      }
+
+      .self .avatar {
+        background:
+          linear-gradient(180deg, #79d7b5 0 50%, var(--player-accent) 50% 100%);
+      }
+
+      .player-info {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 0;
+        flex: 1;
+        min-height: 40px;
+        margin-left: -10px;
+        padding: 5px 8px 5px 18px;
+        border: var(--pixel-border);
+        background:
+          linear-gradient(180deg, #fff3c4 0 14%, var(--panel) 14% 100%);
+        box-shadow: var(--shadow);
+      }
+
+      .player-main {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        flex: 1;
+        min-width: 0;
+      }
+
+      .player-info::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 6px;
+        height: 100%;
+        background: rgba(36, 27, 47, 0.08);
+        pointer-events: none;
+      }
+
+      .player-name {
+        margin: 0;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        line-height: 1;
+        text-transform: uppercase;
+      }
+
+      .player-meta {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        font-size: 7px;
+        color: var(--text-muted);
+        letter-spacing: 0.04em;
+      }
+
+      .intent-chip {
+        color: #7f3941;
+      }
+
+      .shield-chip {
+        color: #2d6281;
+      }
+
+      .pile-row {
+        display: flex;
+        align-items: stretch;
+        gap: 6px;
+        flex: 0 0 auto;
+      }
+
+      .deck-zone {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        width: 40px;
+        flex: 0 0 40px;
+      }
+
+      .deck-stack {
+        --deck-depth: 12;
+        position: relative;
+        isolation: isolate;
+        width: 34px;
+        height: 50px;
+        border: var(--pixel-border);
+        background:
+          repeating-linear-gradient(
+            180deg,
+            #f7e9bd 0 5px,
+            #efdba2 5px 10px
+          );
+        box-shadow: 3px 3px 0 rgba(20, 14, 27, 0.72);
+      }
+
+      .deck-stack::before,
+      .deck-stack::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        pointer-events: none;
+      }
+
+      .deck-stack::before {
+        z-index: -2;
+        transform: translate(
+          calc(var(--deck-depth) * -0.36px),
+          calc(var(--deck-depth) * 0.42px)
+        );
+        background: #c79b55;
+        border: var(--pixel-border);
+      }
+
+      .deck-stack::after {
+        z-index: -1;
+        transform: translate(
+          calc(var(--deck-depth) * -0.16px),
+          calc(var(--deck-depth) * 0.18px)
+        );
+        background:
+          repeating-linear-gradient(
+            180deg,
+            #fff5d4 0 3px,
+            #d9b97f 3px 5px
+          );
+        border: 1px solid rgba(36, 27, 47, 0.55);
+      }
+
+      .deck-face {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        font-size: 7px;
+        font-weight: 800;
+        color: #523a20;
+        letter-spacing: 0.12em;
+        text-shadow: 1px 1px 0 rgba(255, 248, 222, 0.75);
+      }
+
+      .deck-count {
+        position: absolute;
+        right: -5px;
+        bottom: -6px;
+        min-width: 18px;
+        padding: 2px 4px;
+        border: var(--pixel-border);
+        background: #241b2f;
+        color: #fffaf2;
+        font-size: 7px;
+        font-weight: 800;
+        line-height: 1;
+        text-align: center;
+        box-shadow: 2px 2px 0 rgba(20, 14, 27, 0.75);
+      }
+
+      .status-group {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      .status-row {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+      }
+
+      .bar-label {
+        flex: 0 0 16px;
+        font-size: 7px;
+        color: var(--text-muted);
+        letter-spacing: 0.08em;
+        text-align: right;
+        text-transform: uppercase;
+      }
+
+      .bar-track {
+        position: relative;
+        flex: 1;
+        height: 12px;
+        overflow: hidden;
+        border: var(--pixel-border);
+        background: #cbb992;
+        box-shadow: inset 0 0 0 2px rgba(255, 247, 223, 0.38);
+      }
+
+      .bar-track::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        transform: translateX(-120%);
+        pointer-events: none;
+        will-change: transform, opacity;
+      }
+
+      .bar-fill {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 100%;
+        border-radius: inherit;
+      }
+
+      .bar-fill.hp {
+        background: var(--hp-color);
+      }
+
+      .bar-fill.energy {
+        background: var(--energy-color);
+      }
+
+      .bar-value {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        font-size: 8px;
+        font-weight: 800;
+        line-height: 1;
+        color: #fffaf2;
+        letter-spacing: 0.04em;
+        text-shadow: 1px 1px 0 rgba(38, 27, 12, 0.4);
+      }
+
+      .bar-track.energy-track .bar-value {
+        color: #5f4519;
+        text-shadow: none;
+      }
+
+      .center-tip {
+        position: absolute;
+        inset: 50% 10px auto;
+        transform: translateY(-50%);
+        display: grid;
+        gap: 8px;
+        text-align: center;
+        color: #f6e7b5;
+        text-shadow: 1px 1px 0 rgba(20, 14, 27, 0.8);
+        z-index: 20;
+      }
+
+      .center-tip h1 {
+        margin: 0 0 8px;
+        font-size: 14px;
+        letter-spacing: 0.08em;
+      }
+
+      .center-tip p {
+        margin: 0;
+        font-size: 8px;
+      }
+
+      .turn-indicator {
+        color: #ffe39a;
+      }
+
+      .battle-status {
+        display: inline-flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 28px;
+        padding: 6px 10px;
+        border: var(--pixel-border);
+        background: #f6e7b5;
+        color: #241b2f;
+        box-shadow: var(--shadow);
+        text-shadow: none;
+        transition:
+          background-color 180ms ease,
+          color 180ms ease,
+          border-color 180ms ease,
+          box-shadow 180ms ease;
+      }
+
+      .battle-status[data-status-type="error"] {
+        background: #f08e7f;
+        border-color: #702824;
+        color: #431515;
+        box-shadow: 4px 4px 0 rgba(67, 21, 21, 0.55);
+      }
+
+      .card-detail-panel {
+        position: absolute;
+        right: 10px;
+        bottom: 10px;
+        width: 126px;
+        min-height: 76px;
+        padding: 8px;
+        border: 2px solid #fff0c6;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0 16%, rgba(255, 255, 255, 0) 16% 100%),
+          repeating-linear-gradient(90deg, rgba(255, 248, 226, 0.08) 0 2px, transparent 2px 6px),
+          linear-gradient(180deg, #f7e7b6 0%, #d7bb73 100%);
+        box-shadow:
+          0 0 0 2px #4b3720,
+          4px 4px 0 rgba(20, 14, 27, 0.92);
+        z-index: 38;
+      }
+
+      .card-detail-panel[data-state="empty"] {
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0 16%, rgba(255, 255, 255, 0) 16% 100%),
+          repeating-linear-gradient(90deg, rgba(255, 248, 226, 0.06) 0 2px, transparent 2px 6px),
+          linear-gradient(180deg, #e8d8ae 0%, #caae69 100%);
+      }
+
+      .card-detail-panel::before {
+        content: "";
+        position: absolute;
+        inset: 4px;
+        border: 2px solid rgba(63, 45, 23, 0.72);
+        pointer-events: none;
+      }
+
+      .card-detail-kicker,
+      .card-detail-name,
+      .card-detail-empty,
+      .card-detail-effect {
+        margin: 0;
+      }
+
+      .card-detail-kicker {
+        position: relative;
+        z-index: 1;
+        color: var(--text-muted);
+        font-size: 6px;
+        letter-spacing: 0.08em;
+      }
+
+      .card-detail-header {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 6px;
+        margin-top: 6px;
+      }
+
+      .card-detail-name {
+        color: var(--text-main);
+        font-size: 9px;
+        font-weight: 800;
+        line-height: 1;
+      }
+
+      .card-detail-cost {
+        color: #7a4d12;
+        font-size: 6px;
+        font-weight: 800;
+        line-height: 1;
+        white-space: nowrap;
+      }
+
+      .card-detail-empty,
+      .card-detail-effect {
+        position: relative;
+        z-index: 1;
+        margin-top: 8px;
+        color: var(--text-main);
+        font-size: 6px;
+        line-height: 1.45;
+      }
+
+      .action-row {
+        display: flex;
+        justify-content: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .action-button {
+        border: var(--pixel-border);
+        padding: 6px 8px;
+        background:
+          linear-gradient(180deg, #fff3c8 0 50%, #e9c972 50% 100%);
+        color: var(--text-main);
+        font: inherit;
+        font-size: 8px;
+        box-shadow: 3px 3px 0 rgba(20, 14, 27, 0.8);
+        touch-action: manipulation;
+        text-transform: uppercase;
+      }
+
+      .action-button:disabled {
+        opacity: 0.56;
+        cursor: wait;
+        box-shadow: 2px 2px 0 rgba(20, 14, 27, 0.45);
+      }
+
+      .hand-zone {
+        position: absolute;
+        left: 50%;
+        width: min(calc(100% - 28px), 392px);
+        transform: translateX(-50%);
+        pointer-events: none;
+        z-index: 80;
+      }
+
+      .hand-zone.enemy {
+        top: 130px;
+      }
+
+      .hand-zone.self {
+        bottom: 124px;
+        pointer-events: auto;
+        touch-action: none;
+      }
+
+      .hand-zone.is-measuring {
+        position: absolute;
+        visibility: hidden;
+        pointer-events: none;
+        z-index: -1;
+      }
+
+      .hand-fan {
+        position: relative;
+        isolation: isolate;
+        display: flex;
+        justify-content: center;
+        align-items: flex-end;
+        gap: 0;
+      }
+
+      .hand-card {
+        --card-accent: #846c40;
+        --card-accent-strong: rgba(132, 108, 64, 0.84);
+        --card-surface: linear-gradient(180deg, #f8f2df 0%, #ddd0aa 100%);
+        --card-edge: rgba(22, 20, 25, 0.88);
+        --card-copy: #1d1a16;
+        --card-subtle: rgba(29, 26, 22, 0.62);
+        --card-art-surface:
+          linear-gradient(135deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 48%),
+          linear-gradient(180deg, rgba(42, 30, 25, 0.88) 0%, rgba(24, 19, 17, 0.98) 100%);
+        position: relative;
+        z-index: var(--card-z-index, 1);
+        opacity: var(--card-opacity, 1);
+        display: flex;
+        flex-direction: column;
+        width: 84px;
+        height: 124px;
+        padding: 6px;
+        border: 2px solid #fff1cb;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.52) 0 14%, rgba(255, 255, 255, 0) 14% 100%),
+          var(--card-surface);
+        box-shadow:
+          0 0 0 2px rgba(70, 48, 22, 0.95),
+          0 14px 24px rgba(0, 0, 0, 0.26),
+          0 4px 0 rgba(20, 14, 27, 0.9);
+        border-radius: 4px;
+        outline: 2px solid rgba(255, 244, 221, 0.44);
+        outline-offset: -6px;
+        color: var(--card-copy);
+        overflow: hidden;
+        transform:
+          translateX(var(--flip-x, 0px))
+          translateY(var(--flip-y, 0px))
+          rotate(var(--flip-rotate, 0deg))
+          translateX(var(--drag-x, 0px))
+          translateY(var(--drag-y, 0px))
+          translateX(var(--card-shift-x, 0px))
+          translateY(calc(var(--card-offset-y, 0px) + var(--card-lift, 0px)))
+          rotate(var(--card-current-angle, var(--card-angle, 0deg)))
+          scale(var(--card-scale, 1));
+        transition:
+          transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+          opacity 180ms ease,
+          box-shadow 260ms ease,
+          filter 260ms ease,
+          border-color 220ms ease;
+      }
+
+      .hand-card::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(135deg, rgba(255, 255, 255, 0.46) 0%, rgba(255, 255, 255, 0) 28%),
+          linear-gradient(180deg, rgba(255, 255, 255, 0) 68%, rgba(0, 0, 0, 0.08) 100%);
+        pointer-events: none;
+      }
+
+      .hand-card::after {
+        content: "";
+        position: absolute;
+        inset: 5px;
+        border: 1px solid rgba(88, 63, 29, 0.38);
+        border-radius: 1px;
+        pointer-events: none;
+      }
+
+      .hand-card[data-card-kind="attack"] {
+        --card-accent: #d4584d;
+        --card-accent-strong: rgba(122, 33, 26, 0.88);
+        --card-surface: linear-gradient(180deg, #fff1eb 0%, #f1cfbd 100%);
+        --card-copy: #2f1411;
+        --card-subtle: rgba(70, 28, 23, 0.68);
+        --card-art-surface:
+          linear-gradient(135deg, rgba(255, 154, 125, 0.42) 0%, rgba(255, 154, 125, 0) 44%),
+          linear-gradient(160deg, #8d2a21 0%, #38120e 100%);
+      }
+
+      .hand-card[data-card-kind="defend"] {
+        --card-accent: #3d86b5;
+        --card-accent-strong: rgba(29, 72, 104, 0.88);
+        --card-surface: linear-gradient(180deg, #eef6fb 0%, #cfe1ef 100%);
+        --card-copy: #102334;
+        --card-subtle: rgba(18, 43, 63, 0.7);
+        --card-art-surface:
+          linear-gradient(135deg, rgba(124, 219, 255, 0.32) 0%, rgba(124, 219, 255, 0) 42%),
+          linear-gradient(160deg, #1d567d 0%, #0d2338 100%);
+      }
+
+      .hand-card[data-card-kind="energize"] {
+        --card-accent: #d19a23;
+        --card-accent-strong: rgba(111, 77, 16, 0.88);
+        --card-surface: linear-gradient(180deg, #fff6df 0%, #f0ddaa 100%);
+        --card-copy: #35260a;
+        --card-subtle: rgba(83, 59, 13, 0.72);
+        --card-art-surface:
+          linear-gradient(135deg, rgba(255, 235, 146, 0.38) 0%, rgba(255, 235, 146, 0) 44%),
+          linear-gradient(160deg, #8b6412 0%, #382709 100%);
+      }
+
+      .hand-card + .hand-card {
+        margin-left: calc(var(--card-overlap, 0px) * -1);
+      }
+
+      .hand-zone.enemy .hand-card {
+        transform-origin: center top;
+      }
+
+      .hand-zone.self .hand-card {
+        transform-origin: center bottom;
+        cursor: grab;
+        touch-action: none;
+      }
+
+      .hand-zone.self .hand-fan.is-previewing .hand-card {
+        --card-lift: 10px;
+        filter: saturate(0.8) brightness(0.95) contrast(0.98);
+      }
+
+      .hand-zone.self .hand-card.is-active {
+        --card-lift: -54px;
+        --card-scale: 1.12;
+        --card-current-angle: 0deg;
+        box-shadow:
+          0 0 0 2px rgba(255, 240, 199, 0.98),
+          0 0 0 4px rgba(77, 56, 28, 0.98),
+          0 22px 44px rgba(0, 0, 0, 0.34),
+          0 6px 0 rgba(20, 14, 27, 0.98);
+        filter: saturate(1.04) brightness(1.01);
+        border-color: rgba(255, 244, 221, 0.98);
+        z-index: 9999;
+      }
+
+      .hand-zone.self .hand-card.is-dragging {
+        --card-current-angle: 0deg;
+        --card-scale: 1.06;
+        --card-lift: -20px;
+        cursor: grabbing;
+        transition: none;
+        z-index: 10000;
+      }
+
+      .hand-zone.self .hand-card.is-dragging.is-armed {
+        filter: saturate(1.1) brightness(1.03);
+        box-shadow:
+          0 0 0 2px rgba(255, 240, 199, 0.98),
+          0 0 0 4px rgba(77, 56, 28, 0.98),
+          0 26px 48px rgba(0, 0, 0, 0.36),
+          0 6px 0 rgba(20, 14, 27, 0.98);
+      }
+
+      .hand-zone.self .hand-card.is-shattering {
+        --card-opacity: 0;
+        pointer-events: none;
+        z-index: 10001;
+      }
+
+      .hand-card.is-hidden {
+        overflow: hidden;
+        padding: 0;
+        background:
+          linear-gradient(180deg, #1d2230 0%, #0c1017 100%);
+        border-color: transparent;
+        outline: none;
+      }
+
+      .hand-card.is-draw-target-hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .draw-flight-card {
+        position: absolute;
+        margin: 0;
+        pointer-events: none;
+        transform-origin: center center;
+        z-index: 26000;
+        box-shadow: 5px 5px 0 rgba(20, 14, 27, 0.82);
+        transition: none;
+        will-change: transform, opacity;
+        contain: layout paint style;
+      }
+
+      @keyframes player-hit-shake {
+        0% {
+          transform: translate3d(0, 0, 0);
+        }
+        16% {
+          transform: translate3d(-8px, 0, 0);
+        }
+        34% {
+          transform: translate3d(6px, 1px, 0);
+        }
+        52% {
+          transform: translate3d(-5px, -1px, 0);
+        }
+        74% {
+          transform: translate3d(3px, 0, 0);
+        }
+        100% {
+          transform: translate3d(0, 0, 0);
+        }
+      }
+
+      @keyframes player-float-rise {
+        0% {
+          opacity: 0;
+          transform: translate3d(var(--float-x, 0px), calc(var(--float-y, 0px) + var(--float-drift-start, 6px)), 0) scale(0.9);
+        }
+        16% {
+          opacity: 1;
+          transform: translate3d(var(--float-x, 0px), var(--float-y, 0px), 0) scale(1);
+        }
+        58% {
+          opacity: 1;
+          transform: translate3d(var(--float-x, 0px), calc(var(--float-y, 0px) - 8px), 0) scale(1.02);
+        }
+        100% {
+          opacity: 0;
+          transform: translate3d(var(--float-x, 0px), calc(var(--float-y, 0px) + var(--float-drift-end, -20px)), 0) scale(1.06);
+        }
+      }
+
+      @keyframes player-hit-flare {
+        0% {
+          opacity: 0;
+          transform: scale(0.84);
+        }
+        35% {
+          opacity: 1;
+          transform: scale(1.06);
+        }
+        100% {
+          opacity: 0;
+          transform: scale(1.18);
+        }
+      }
+
+      @keyframes shield-bloom {
+        0% {
+          opacity: 0;
+          transform: scale(0.8);
+        }
+        45% {
+          opacity: 0.88;
+          transform: scale(1.04);
+        }
+        100% {
+          opacity: 0;
+          transform: scale(1.14);
+        }
+      }
+
+      @keyframes energy-bloom {
+        0% {
+          opacity: 0;
+          transform: scale(0.82);
+        }
+        42% {
+          opacity: 0.92;
+          transform: scale(1.05);
+        }
+        100% {
+          opacity: 0;
+          transform: scale(1.16);
+        }
+      }
+
+      @keyframes shield-node-pulse {
+        0%,
+        100% {
+          transform: translate3d(0, 0, 0) scale(1);
+          box-shadow: 3px 3px 0 rgba(20, 14, 27, 0.75);
+        }
+        45% {
+          transform: translate3d(0, -1px, 0) scale(1.03);
+          box-shadow:
+            0 0 0 2px rgba(225, 247, 255, 0.9),
+            4px 4px 0 rgba(38, 102, 150, 0.72);
+        }
+      }
+
+      @keyframes energy-node-pulse {
+        0%,
+        100% {
+          transform: translate3d(0, 0, 0) scale(1);
+          box-shadow: 3px 3px 0 rgba(20, 14, 27, 0.75);
+        }
+        45% {
+          transform: translate3d(0, -1px, 0) scale(1.035);
+          box-shadow:
+            0 0 0 2px rgba(255, 246, 206, 0.94),
+            4px 4px 0 rgba(181, 130, 28, 0.76);
+        }
+      }
+
+      @keyframes shield-bar-pulse {
+        0%,
+        100% {
+          transform: scaleY(1);
+          box-shadow: inset 0 0 0 2px rgba(255, 247, 223, 0.38);
+        }
+        45% {
+          box-shadow:
+            inset 0 0 0 2px rgba(255, 247, 223, 0.38),
+            0 0 0 2px rgba(119, 208, 255, 0.82);
+          transform: scaleY(1.08);
+        }
+      }
+
+      @keyframes energy-bar-surge {
+        0%,
+        100% {
+          transform: scaleY(1);
+          box-shadow: inset 0 0 0 2px rgba(255, 247, 223, 0.38);
+        }
+        45% {
+          box-shadow:
+            inset 0 0 0 2px rgba(255, 247, 223, 0.38),
+            0 0 0 2px rgba(255, 227, 123, 0.84);
+          transform: scaleY(1.08);
+        }
+      }
+
+      .player-card.is-receiving-shield .hp-track::after {
+        opacity: 1;
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(193, 235, 255, 0.68) 46%, rgba(255, 255, 255, 0) 100%);
+        animation: bar-scan 460ms cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .player-card.is-receiving-energy .energy-track::after {
+        opacity: 1;
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 237, 154, 0.74) 46%, rgba(255, 255, 255, 0) 100%);
+        animation: bar-scan 500ms cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      @keyframes bar-scan {
+        0% {
+          opacity: 0;
+          transform: translateX(-120%);
+        }
+        25% {
+          opacity: 1;
+        }
+        100% {
+          opacity: 0;
+          transform: translateX(120%);
+        }
+      }
+
+      .card-back-pattern {
+        position: absolute;
+        inset: 7px;
+        display: grid;
+        place-items: center;
+        border: none;
+        border-radius: 2px;
+        background:
+          radial-gradient(circle at 50% 28%, rgba(255, 223, 148, 0.24) 0 18%, rgba(255, 223, 148, 0) 18% 100%),
+          repeating-linear-gradient(
+            135deg,
+            rgba(255, 239, 214, 0.08) 0 6px,
+            rgba(125, 54, 42, 0.18) 6px 12px
+          );
+      }
+
+      .card-back-pattern::before,
+      .card-back-pattern::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        width: 58px;
+        height: 1px;
+        background: rgba(255, 240, 207, 0.2);
+        transform: translateX(-50%);
+      }
+
+      .card-back-pattern::before {
+        top: 16px;
+      }
+
+      .card-back-pattern::after {
+        bottom: 16px;
+      }
+
+      .card-back-core {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        gap: 4px;
+        justify-items: center;
+      }
+
+      .card-back-title {
+        color: #fff0cf;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.16em;
+      }
+
+      .card-back-subtitle {
+        color: rgba(255, 240, 207, 0.68);
+        font-size: 6px;
+        letter-spacing: 0.22em;
+      }
+
+      .card-hero {
+        position: relative;
+        z-index: 1;
+        display: block;
+        margin-top: 8px;
+      }
+
+      .card-name-row {
+        display: flex;
+        align-items: baseline;
+        gap: 5px;
+        min-width: 0;
+      }
+
+      .card-name {
+        margin: 0;
+        font-size: 9px;
+        font-weight: 800;
+        line-height: 1;
+        color: var(--card-copy);
+        letter-spacing: 0.04em;
+        flex: 1;
+        min-width: 0;
+      }
+
+      .card-cost-inline {
+        flex: 0 0 auto;
+        color: var(--card-accent-strong);
+        font-size: 5px;
+        font-weight: 800;
+        line-height: 1;
+        letter-spacing: 0.08em;
+        white-space: nowrap;
+      }
+
+      .card-art {
+        position: relative;
+        isolation: isolate;
+        flex: 1;
+        min-height: 68px;
+        margin-top: 6px;
+        padding: 6px;
+        border: 1px solid rgba(16, 18, 24, 0.32);
+        border-radius: 12px;
+        background: var(--card-art-surface);
+        overflow: hidden;
+      }
+
+      .card-art::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          repeating-linear-gradient(
+            90deg,
+            rgba(255, 255, 255, 0.06) 0 1px,
+            transparent 1px 8px
+          ),
+          linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0) 50%);
+        pointer-events: none;
+      }
+
+      .card-art.has-art {
+        background-image:
+          linear-gradient(180deg, rgba(10, 10, 12, 0.12) 0%, rgba(10, 10, 12, 0.76) 100%),
+          var(--card-image);
+        background-position: center;
+        background-size: cover;
+      }
+
+      .card-art.is-placeholder {
+        background-image:
+          linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 34%),
+          radial-gradient(circle at 78% 24%, rgba(255, 255, 255, 0.14) 0 12%, rgba(255, 255, 255, 0) 12% 100%),
+          repeating-linear-gradient(
+            135deg,
+            rgba(255, 255, 255, 0.06) 0 8px,
+            rgba(0, 0, 0, 0.08) 8px 16px
+          ),
+          var(--card-art-surface);
+      }
+
+      .hand-zone.self .hand-card.is-active .card-name {
+        font-size: 10px;
+      }
+
+      .hand-zone.self .hand-card.is-active .card-cost-inline {
+        font-size: 5.5px;
+      }
+
+      @media (max-height: 820px) {
+        .game-screen {
+          padding:
+            calc(var(--safe-top) + 8px)
+            calc(var(--safe-right) + 8px)
+            calc(var(--safe-bottom) + 8px)
+            calc(var(--safe-left) + 8px);
+        }
+
+        .player-card.enemy {
+          top: 8px;
+        }
+
+        .player-card.self {
+          bottom: 8px;
+        }
+
+        .card-detail-panel {
+          right: 8px;
+          bottom: 8px;
+          width: 118px;
+          min-height: 72px;
+          padding: 7px;
+        }
+
+        .avatar {
+          flex-basis: 34px;
+          width: 34px;
+          height: 34px;
+          font-size: 11px;
+        }
+
+        .player-info {
+          min-height: 36px;
+          padding: 4px 6px 4px 16px;
+        }
+
+        .player-name {
+          font-size: 8px;
+        }
+
+        .player-meta,
+        .bar-value,
+        .bar-label,
+        .deck-face,
+        .deck-count,
+        .action-button,
+        .center-tip p {
+          font-size: 7px;
+        }
+
+        .deck-zone {
+          width: 36px;
+          flex-basis: 36px;
+        }
+
+        .deck-stack {
+          width: 30px;
+          height: 44px;
+        }
+
+        .hand-zone.enemy {
+          top: 114px;
+        }
+
+        .hand-zone.self {
+          bottom: 110px;
+        }
+
+        .center-tip h1 {
+          font-size: 12px;
+        }
+
+        .battle-status {
+          min-height: 24px;
+          padding: 4px 8px;
+        }
+
+        .card-detail-kicker,
+        .card-detail-cost,
+        .card-detail-empty,
+        .card-detail-effect {
+          font-size: 5px;
+        }
+
+        .card-detail-name {
+          font-size: 8px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="game-screen">
+      <div class="arena-glow" aria-hidden="true"></div>
+      <canvas class="fx-layer" data-fx-layer aria-hidden="true"></canvas>
+
+      <section class="player-card enemy" data-player="enemy" aria-label="对方信息">
+        <div class="avatar" data-player-avatar aria-hidden="true">敌</div>
+        <div class="player-info">
+          <div class="player-main">
+            <p class="player-name" data-player-name>对手</p>
+            <div class="player-meta">
+              <span>手牌 <span data-player-hand>5</span></span>
+              <span class="shield-chip">护盾 <span data-player-shield>0</span></span>
+            </div>
+            <div class="status-group">
+              <div class="status-row">
+                <div class="bar-track hp-track" data-bar-root="hp">
+                  <div class="bar-fill hp" data-bar-fill data-current="30" data-max="30"></div>
+                  <span class="bar-value" data-bar-text>30 / 30</span>
+                </div>
+                <span class="bar-label">HP</span>
+              </div>
+              <div class="status-row">
+                <div class="bar-track energy-track" data-bar-root="ep">
+                  <div class="bar-fill energy" data-bar-fill data-current="3" data-max="3"></div>
+                  <span class="bar-value" data-bar-text>3 / 3</span>
+                </div>
+                <span class="bar-label">EP</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="pile-row">
+          <div class="deck-zone">
+            <div class="deck-stack" data-player-deck-stack>
+              <span class="deck-face">DECK</span>
+              <span class="deck-count" data-player-deck>30</span>
+            </div>
+          </div>
+          <div class="deck-zone">
+            <div class="deck-stack" data-player-discard-stack>
+              <span class="deck-face">DISC</span>
+              <span class="deck-count" data-player-discard>0</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="hand-zone enemy" aria-label="对手手牌区域">
+        <div class="hand-fan" data-hand="enemy"></div>
+      </section>
+
+      <div class="center-tip">
+        <h1>战斗准备</h1>
+        <p class="turn-indicator" data-turn-indicator>第 1 回合 · 我方回合</p>
+        <p class="battle-status" data-battle-status data-status-type="info">卡牌对局准备中</p>
+        <div class="action-row">
+          <button class="action-button" type="button" data-action="end-turn">结束回合</button>
+          <button class="action-button" type="button" data-action="reset">重置</button>
+        </div>
+      </div>
+
+      <section class="hand-zone self" aria-label="我方手牌区域">
+        <div class="hand-fan" data-hand="self"></div>
+      </section>
+
+      <aside class="card-detail-panel" data-card-detail data-state="empty" aria-live="polite">
+        <p class="card-detail-kicker">技能说明</p>
+        <p class="card-detail-empty">选中一张手牌后，这里显示详细效果。</p>
+      </aside>
+
+      <section class="player-card self" data-player="self" aria-label="我方信息">
+        <div class="avatar" data-player-avatar aria-hidden="true">我</div>
+        <div class="player-info">
+          <div class="player-main">
+            <p class="player-name" data-player-name>我方</p>
+            <div class="player-meta">
+              <span>手牌 <span data-player-hand>5</span></span>
+              <span class="shield-chip">护盾 <span data-player-shield>0</span></span>
+            </div>
+            <div class="status-group">
+              <div class="status-row">
+                <div class="bar-track hp-track" data-bar-root="hp">
+                  <div class="bar-fill hp" data-bar-fill data-current="30" data-max="30"></div>
+                  <span class="bar-value" data-bar-text>30 / 30</span>
+                </div>
+                <span class="bar-label">HP</span>
+              </div>
+              <div class="status-row">
+                <div class="bar-track energy-track" data-bar-root="ep">
+                  <div class="bar-fill energy" data-bar-fill data-current="3" data-max="3"></div>
+                  <span class="bar-value" data-bar-text>3 / 3</span>
+                </div>
+                <span class="bar-label">EP</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="pile-row">
+          <div class="deck-zone">
+            <div class="deck-stack" data-player-deck-stack>
+              <span class="deck-face">DECK</span>
+              <span class="deck-count" data-player-deck>30</span>
+            </div>
+          </div>
+          <div class="deck-zone">
+            <div class="deck-stack" data-player-discard-stack>
+              <span class="deck-face">DISC</span>
+              <span class="deck-count" data-player-discard>0</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
