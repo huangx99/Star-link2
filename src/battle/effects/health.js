@@ -36,6 +36,14 @@ function gainShield(player, amount) {
   return clampShield(player);
 }
 
+function spendShield(player, amount) {
+  const shield = Math.max(0, Number(player.shield) || 0);
+  const spent = Math.min(shield, Math.max(0, Number(amount) || 0));
+  player.shield = shield - spent;
+  clampShield(player);
+  return spent;
+}
+
 function resetShield(player) {
   player.shield = 0;
   return clampShield(player);
@@ -47,5 +55,6 @@ module.exports = {
   clampHp,
   clampShield,
   gainShield,
+  spendShield,
   resetShield,
 };

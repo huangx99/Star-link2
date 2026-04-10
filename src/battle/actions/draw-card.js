@@ -13,17 +13,17 @@ function runDrawCard(state, actorId, options = {}) {
     throw new Error(`${actor.name} 已无剩余牌组`);
   }
 
-  const serial = actor.nextCardNumber;
-  const maxSerial = PLAYER_DECK_SIZE;
+  const drawIndex = Math.max(0, Number(actor.nextDeckIndex) || 0);
+  const serial = actor.deckOrder?.[drawIndex];
 
-  if (serial > maxSerial) {
+  if (!serial || drawIndex >= PLAYER_DECK_SIZE) {
     throw new Error(`${actor.name} 已无可抽取卡牌`);
   }
 
-  actor.hand.push(createCard(actorId, serial));
+  actor.hand.push(createCard(actorId, serial, actor.deckArchetype?.key));
   actor.handCount = actor.hand.length;
   actor.deckSize -= 1;
-  actor.nextCardNumber += 1;
+  actor.nextDeckIndex = drawIndex + 1;
 
   if (!suppressLastAction) {
     state.lastAction = {

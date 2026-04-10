@@ -6,6 +6,8 @@ const selfHandRoot = document.querySelector('[data-hand="self"]');
 const gameScreen = document.querySelector(".game-screen");
 const fxCanvas = document.querySelector("[data-fx-layer]");
 const cardDetailPanel = document.querySelector("[data-card-detail]");
+const selfArchetypeSelect = document.querySelector('[data-archetype-select="self"]');
+const enemyArchetypeSelect = document.querySelector('[data-archetype-select="enemy"]');
 const CARD_WIDTH = 84;
 const CARD_HEIGHT = 124;
 const HAND_MAX_SPAN = 356;
@@ -14,6 +16,41 @@ let currentBattleState = null;
 let isResolvingAction = false;
 let activeSelfCardId = null;
 let lastSelectedSelfCard = null;
+let activeStatusTooltip = null;
+let battleConfig = null;
+
+const STATUS_DETAIL_THEME = {
+  sharpness: {
+    label: "锐势",
+    kind: "buff",
+    color: "#d2b04a",
+    description: "造成伤害时，每层额外增加1点伤害。",
+  },
+  weaken: {
+    label: "虚弱",
+    kind: "debuff",
+    color: "#d86a94",
+    description: "造成伤害时，每层减少1点伤害，持续回合会在回合结束时衰减。",
+  },
+  poison: {
+    label: "中毒",
+    kind: "debuff",
+    color: "#ff7ca8",
+    description: "回合结束时受到等同层数的伤害，然后层数减1。",
+  },
+  regen: {
+    label: "再生",
+    kind: "buff",
+    color: "#7edc8f",
+    description: "回合结束时回复等同层数的生命，然后层数减1。",
+  },
+  cleanse: {
+    label: "净化",
+    kind: "cleanse",
+    color: "#72dacc",
+    description: "清除目标身上的负面状态。",
+  },
+};
 
 function setBattleStatus(message, type = "info") {
   if (!battleStatus) {
@@ -22,6 +59,32 @@ function setBattleStatus(message, type = "info") {
 
   battleStatus.textContent = message;
   battleStatus.dataset.statusType = type;
+}
+
+function populateArchetypeSelect(selectNode, archetypes = []) {
+  if (!selectNode) {
+    return;
+  }
+
+  const options = [
+    '<option value="">随机</option>',
+    ...archetypes.map(
+      (archetype) =>
+        `<option value="${escapeHtml(archetype.key)}">${escapeHtml(archetype.label)}</option>`
+    ),
+  ];
+
+  selectNode.innerHTML = options.join("");
+}
+
+function setArchetypeSelectsDisabled(disabled) {
+  if (selfArchetypeSelect) {
+    selfArchetypeSelect.disabled = disabled;
+  }
+
+  if (enemyArchetypeSelect) {
+    enemyArchetypeSelect.disabled = disabled;
+  }
 }
 
 function getCardDescription(card) {
@@ -39,6 +102,215 @@ function getCardDescription(card) {
     default:
       return "发动一项战术效果";
   }
+}
+
+function getStatusTheme(statusKey, fallback = {}) {
+  return {
+    label: fallback.label || STATUS_DETAIL_THEME[statusKey]?.label || statusKey,
+    kind: fallback.kind || STATUS_DETAIL_THEME[statusKey]?.kind || "buff",
+    color: STATUS_DETAIL_THEME[statusKey]?.color || (fallback.kind === "debuff" ? "#d86a94" : "#8bbf58"),
+    description: fallback.description || STATUS_DETAIL_THEME[statusKey]?.description || "状态效果说明待补充。",
+  };
+}
+
+function escapeHtml(value = "") {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function formatStatusChipMeta(status) {
+  if (!status) {
+    return "";
+  }
+
+  const stackText = status.stacks > 0 ? `x${status.stacks}` : "";
+  const durationText = status.permanent ? "∞" : status.duration != null ? `${status.duration}T` : "";
+  return [stackText, durationText].filter(Boolean).join(" ");
+}
+
+function createStatusChipMarkup(status, role) {
+  const chipClass = ["status-chip", status.kind];
+
+  if (status.permanent) {
+    chipClass.push("is-permanent");
+  }
+
+  return `
+    <button
+      class="${chipClass.join(" ")}"
+      type="button"
+      data-status-chip
+      data-status-role="${role}"
+      data-status-key="${status.key}"
+      title="${status.description || status.label}"
+    >
+      <span class="status-chip-label">${status.label}</span>
+      <span class="status-chip-meta">${formatStatusChipMeta(status)}</span>
+    </button>
+  `;
+}
+
+function renderStatusStrip(container, role, statuses = []) {
+  if (!container) {
+    return;
+  }
+
+  container.innerHTML = statuses.map((status) => createStatusChipMarkup(status, role)).join("");
+}
+
+function buildCardStatusDetailEntries(card) {
+  const entries = [];
+
+  (card?.statusEffects ?? []).forEach((statusEffect) => {
+    const theme = getStatusTheme(statusEffect.key);
+    const targetText = statusEffect.target === "target" ? "目标" : "自身";
+    const stackText = Math.max(1, Number(statusEffect.stacks) || 1);
+    const durationText = statusEffect.permanent ? "永久" : statusEffect.duration ? `，持续${statusEffect.duration}回合` : "";
+
+    entries.push({
+      color: theme.color,
+      label: `[${theme.label}]`,
+      text: `${targetText}获得${stackText}层${durationText}。${theme.description}`,
+    });
+  });
+
+  (card?.cleanseEffects ?? []).forEach((cleanseEffect) => {
+    const theme = getStatusTheme("cleanse", { kind: "cleanse" });
+    const targetText = cleanseEffect.target === "target" ? "目标" : "自身";
+    const countText =
+      Number.isFinite(cleanseEffect.count) && cleanseEffect.count < 99
+        ? `${cleanseEffect.count}个`
+        : "所有";
+    const kindText = cleanseEffect.kind === "buff" ? "增益" : cleanseEffect.kind === "debuff" ? "减益" : "状态";
+
+    entries.push({
+      color: theme.color,
+      label: `[${theme.label}]`,
+      text: `${targetText}清除${countText}${kindText}状态。`,
+    });
+  });
+
+  (card?.statusBurstEffects ?? []).forEach((burstEffect) => {
+    const theme = getStatusTheme(burstEffect.key);
+    const sourceText = burstEffect.source === "target" ? "目标" : "自身";
+    const targetText = burstEffect.target === "target" ? "目标" : "自身";
+    const countText =
+      burstEffect.mode === "all"
+        ? "全部"
+        : `${Math.max(1, Number(burstEffect.amount) || 1)}层`;
+    const multiplier = Number(burstEffect.multiplier) || 1;
+    const bonus = Math.max(0, Number(burstEffect.bonus) || 0);
+    const producedText =
+      bonus > 0
+        ? `每层转为${multiplier}点伤害并额外增加${bonus}点`
+        : `每层转为${multiplier}点伤害`;
+
+    entries.push({
+      color: theme.color,
+      label: `[${theme.label}]`,
+      text: `引爆${sourceText}${countText}层，对${targetText}${producedText}。`,
+    });
+  });
+
+  return entries;
+}
+
+function renderDetailStatusSection(title, entries = []) {
+  if (!entries.length) {
+    return "";
+  }
+
+  return `
+    <div class="card-detail-status-list">
+      <p class="card-detail-status-title">${title}</p>
+      ${entries
+        .map(
+          (entry) => `
+            <div class="card-detail-status-item">
+              <span class="card-detail-status-dot" aria-hidden="true" style="color:${entry.color};"></span>
+              <span><strong>${escapeHtml(entry.label || "")}</strong>${entry.label ? " " : ""}${escapeHtml(entry.text)}</span>
+            </div>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function getStatusByRoleAndKey(role, statusKey) {
+  const player = currentBattleState?.players?.[role];
+
+  if (!player) {
+    return null;
+  }
+
+  return player.statuses?.find((status) => status.key === statusKey) || null;
+}
+
+function hideStatusTooltip() {
+  if (!activeStatusTooltip) {
+    return;
+  }
+
+  activeStatusTooltip.node.remove();
+  activeStatusTooltip = null;
+}
+
+function showStatusTooltip(statusChip) {
+  if (!gameScreen || !statusChip) {
+    return;
+  }
+
+  const role = statusChip.dataset.statusRole;
+  const statusKey = statusChip.dataset.statusKey;
+  const status = getStatusByRoleAndKey(role, statusKey);
+
+  if (!status) {
+    hideStatusTooltip();
+    return;
+  }
+
+  hideStatusTooltip();
+
+  const theme = getStatusTheme(status.key, status);
+  const tooltip = document.createElement("div");
+  const chipRect = statusChip.getBoundingClientRect();
+  const gameRect = gameScreen.getBoundingClientRect();
+  const stackText = status.stacks > 0 ? `${status.stacks}层` : "";
+  const durationText = status.permanent ? "永久" : status.duration != null ? `${status.duration}回合` : "";
+  const metaText = [stackText, durationText].filter(Boolean).join(" · ");
+
+  tooltip.className = "status-tooltip";
+  tooltip.innerHTML = `
+    <p class="status-tooltip-name">[${escapeHtml(theme.label)}]</p>
+    ${metaText ? `<p class="status-tooltip-meta">${escapeHtml(metaText)}</p>` : ""}
+    <p class="status-tooltip-desc">${escapeHtml(theme.description)}</p>
+  `;
+
+  gameScreen.appendChild(tooltip);
+
+  const tooltipRect = tooltip.getBoundingClientRect();
+  let left = chipRect.left - gameRect.left + chipRect.width / 2 - tooltipRect.width / 2;
+  let top = chipRect.top - gameRect.top - tooltipRect.height - 8;
+
+  left = Math.max(6, Math.min(left, gameRect.width - tooltipRect.width - 6));
+
+  if (top < 6) {
+    top = chipRect.bottom - gameRect.top + 8;
+  }
+
+  tooltip.style.left = `${left}px`;
+  tooltip.style.top = `${top}px`;
+  tooltip.style.setProperty("--status-tooltip-accent", theme.color);
+  activeStatusTooltip = {
+    node: tooltip,
+    role,
+    key: statusKey,
+  };
 }
 
 function getHandLayout(count, index, role) {
@@ -118,6 +390,7 @@ function renderCardDetail(card) {
     return;
   }
 
+  const cardStatusEntries = card ? buildCardStatusDetailEntries(card) : [];
   const description = getCardDescription(card);
   cardDetailPanel.dataset.state = "filled";
   cardDetailPanel.innerHTML = `
@@ -127,6 +400,7 @@ function renderCardDetail(card) {
       <span class="card-detail-cost">耗能 ${card.cost}</span>
     </div>
     <p class="card-detail-effect">${description}</p>
+    ${renderDetailStatusSection("附带效果", cardStatusEntries)}
   `;
 }
 
@@ -178,10 +452,12 @@ function resetDraggedCard(card) {
 
 function setActionButtonsDisabled(disabled) {
   if (!disabled) {
+    setArchetypeSelectsDisabled(false);
     syncActionButtonsAvailability();
     return;
   }
 
+  setArchetypeSelectsDisabled(true);
   actionButtons.forEach((button) => {
     button.disabled = true;
   });
@@ -401,6 +677,34 @@ function getStateVisualTheme(effectType) {
         glow: "#e3f7ff",
       },
     },
+    heal: {
+      particle: {
+        fill: "#9dffb7",
+        shade: "#256c3d",
+        glow: "#edfff1",
+      },
+    },
+    buff: {
+      particle: {
+        fill: "#c6ff8d",
+        shade: "#4d6f1d",
+        glow: "#f5ffd7",
+      },
+    },
+    debuff: {
+      particle: {
+        fill: "#ff9ac7",
+        shade: "#7a2949",
+        glow: "#ffe0ee",
+      },
+    },
+    cleanse: {
+      particle: {
+        fill: "#b9fff4",
+        shade: "#23655e",
+        glow: "#ebfffb",
+      },
+    },
     default: {
       particle: {
         fill: "#ffe596",
@@ -522,6 +826,48 @@ function getParticleEffectProfile(effectType) {
       sizeRange: 2,
       motionStepsBase: 10,
       motionStepsRange: 4,
+    };
+  }
+
+  if (normalizedType === "heal") {
+    return {
+      ...baseProfile,
+      renderStyle: "spark",
+      impactStyle: "spark-burst",
+      feedbackDelay: 520,
+      durationBase: 760,
+      durationJitter: 100,
+      burstMagnitude: 9,
+      swirlMagnitude: 18,
+      targetSpread: 10,
+    };
+  }
+
+  if (normalizedType === "buff") {
+    return {
+      ...baseProfile,
+      renderStyle: "shield",
+      impactStyle: "shield-burst",
+      feedbackDelay: 560,
+      durationBase: 820,
+      durationJitter: 110,
+      burstMagnitude: 10,
+      swirlMagnitude: 16,
+      targetSpread: 12,
+    };
+  }
+
+  if (normalizedType === "debuff" || normalizedType === "cleanse") {
+    return {
+      ...baseProfile,
+      renderStyle: "pixel",
+      impactStyle: "pixel-burst",
+      feedbackDelay: 520,
+      durationBase: 780,
+      durationJitter: 120,
+      burstMagnitude: 9,
+      swirlMagnitude: 18,
+      targetSpread: 12,
     };
   }
 
@@ -1423,10 +1769,33 @@ function animatePlayerBuff(role, kind = "defend") {
     return Promise.resolve();
   }
 
-  const feedbackClass = kind === "energize" ? "is-receiving-energy" : "is-receiving-shield";
-  const duration = kind === "energize" ? 500 : 460;
+  const classMap = {
+    energize: "is-receiving-energy",
+    defend: "is-receiving-shield",
+    heal: "is-receiving-heal",
+    buff: "is-gaining-status",
+    debuff: "is-losing-status",
+    cleanse: "is-losing-status",
+  };
+  const durationMap = {
+    energize: 500,
+    defend: 460,
+    heal: 500,
+    buff: 480,
+    debuff: 480,
+    cleanse: 420,
+  };
+  const feedbackClass = classMap[kind] || classMap.defend;
+  const duration = durationMap[kind] || durationMap.defend;
 
-  playerCard.classList.remove("is-taking-hit", "is-receiving-shield", "is-receiving-energy");
+  playerCard.classList.remove(
+    "is-taking-hit",
+    "is-receiving-shield",
+    "is-receiving-energy",
+    "is-receiving-heal",
+    "is-gaining-status",
+    "is-losing-status"
+  );
   playerCard.getBoundingClientRect();
   playerCard.classList.add(feedbackClass);
 
@@ -1464,6 +1833,34 @@ function getStateEventDisplay(event) {
     };
   }
 
+  if (event.type === "heal") {
+    return {
+      className: "heal",
+      text: `治疗+${event.amount}`,
+    };
+  }
+
+  if (event.type === "buff") {
+    return {
+      className: "buff",
+      text: `${event.label}+${event.amount}`,
+    };
+  }
+
+  if (event.type === "debuff") {
+    return {
+      className: "debuff",
+      text: `${event.label}+${event.amount}`,
+    };
+  }
+
+  if (event.type === "cleanse") {
+    return {
+      className: "cleanse",
+      text: `净化-${event.amount}`,
+    };
+  }
+
   return null;
 }
 
@@ -1486,14 +1883,122 @@ function getStateEventTargetElement(role, eventType) {
     return playerCard.querySelector('[data-bar-root="ep"]') || playerCard;
   }
 
+  if (eventType === "heal") {
+    return playerCard.querySelector('[data-bar-root="hp"]') || playerCard;
+  }
+
+  if (eventType === "buff" || eventType === "debuff" || eventType === "cleanse") {
+    return playerCard.querySelector("[data-player-statuses]") || playerCard;
+  }
+
   return playerCard;
 }
 
-function getStateChangeTargetDescriptors(previousState, nextState, roles = ["self", "enemy"]) {
+function buildStatusMap(statuses = []) {
+  return new Map((statuses || []).map((status) => [status.key, status]));
+}
+
+function getPlayerStatusChangeEvents(previousStatuses = [], nextStatuses = []) {
+  const previousMap = buildStatusMap(previousStatuses);
+  const nextMap = buildStatusMap(nextStatuses);
+  const events = [];
+
+  nextMap.forEach((nextStatus, statusKey) => {
+    const previousStatus = previousMap.get(statusKey);
+    const deltaStacks = (nextStatus.stacks ?? 0) - (previousStatus?.stacks ?? 0);
+
+    if (deltaStacks > 0) {
+      events.push({
+        type: nextStatus.kind === "debuff" ? "debuff" : "buff",
+        amount: deltaStacks,
+        label: nextStatus.label,
+      });
+    }
+  });
+
+  return events;
+}
+
+function getEffectFeedbackAdjustments(effect) {
+  const adjustments = {};
+
+  (effect?.resourceConversions ?? []).forEach((conversion) => {
+    if (conversion.resource !== "shield" || conversion.spent <= 0) {
+      return;
+    }
+
+    const role = conversion.sourceRole;
+    adjustments[role] = adjustments[role] || { ignoreShieldLoss: 0 };
+    adjustments[role].ignoreShieldLoss += conversion.spent;
+  });
+
+  return adjustments;
+}
+
+function getPlayerStateChangeEvents(previousPlayer, nextPlayer, options = {}) {
+  if (!previousPlayer || !nextPlayer) {
+    return [];
+  }
+
+  const previousHp = Number(previousPlayer.hp) || 0;
+  const nextHp = Number(nextPlayer.hp) || 0;
+  const previousShield = Number(previousPlayer.shield) || 0;
+  const nextShield = Number(nextPlayer.shield) || 0;
+  const previousEp = Number(previousPlayer.ep) || 0;
+  const nextEp = Number(nextPlayer.ep) || 0;
+  const ignoredShieldLoss = Math.max(0, Number(options.ignoreShieldLoss) || 0);
+  const hpLoss = Math.max(0, previousHp - nextHp);
+  const shieldLoss = Math.max(0, previousShield - nextShield - ignoredShieldLoss);
+  const shieldGain = Math.max(0, nextShield - previousShield);
+  const energyGain = Math.max(0, nextEp - previousEp);
+  const healGain = Math.max(0, nextHp - previousHp);
+  const events = [];
+
+  if (hpLoss + shieldLoss > 0) {
+    events.push({
+      type: "damage",
+      amount: hpLoss + shieldLoss,
+    });
+  }
+
+  if (shieldGain > 0) {
+    events.push({
+      type: "shield",
+      amount: shieldGain,
+    });
+  }
+
+  if (energyGain > 0) {
+    events.push({
+      type: "energy",
+      amount: energyGain,
+    });
+  }
+
+  if (healGain > 0) {
+    events.push({
+      type: "heal",
+      amount: healGain,
+    });
+  }
+
+  events.push(
+    ...getPlayerStatusChangeEvents(previousPlayer.statuses ?? [], nextPlayer.statuses ?? [])
+  );
+
+  return events;
+}
+
+function getStateChangeTargetDescriptors(previousState, nextState, roles = ["self", "enemy"], options = {}) {
   const descriptors = [];
+  const effectAdjustmentsByRole = options.effectAdjustmentsByRole || {};
 
   roles.forEach((role) => {
-    const events = getPlayerStateChangeEvents(previousState?.players?.[role], nextState?.players?.[role]);
+    const events = getPlayerStateChangeEvents(
+      previousState?.players?.[role],
+      nextState?.players?.[role],
+      effectAdjustmentsByRole[role]
+    );
 
     events.forEach((event) => {
       const targetElement = getStateEventTargetElement(role, event.type);
@@ -1548,49 +2053,10 @@ function animatePlayerFloat(role, event) {
   });
 }
 
-function getPlayerStateChangeEvents(previousPlayer, nextPlayer) {
-  if (!previousPlayer || !nextPlayer) {
-    return [];
-  }
-
-  const previousHp = Number(previousPlayer.hp) || 0;
-  const nextHp = Number(nextPlayer.hp) || 0;
-  const previousShield = Number(previousPlayer.shield) || 0;
-  const nextShield = Number(nextPlayer.shield) || 0;
-  const previousEp = Number(previousPlayer.ep) || 0;
-  const nextEp = Number(nextPlayer.ep) || 0;
-  const totalLoss = previousHp + previousShield - (nextHp + nextShield);
-  const shieldGain = Math.max(0, nextShield - previousShield);
-  const energyGain = Math.max(0, nextEp - previousEp);
-  const events = [];
-
-  if (totalLoss > 0) {
-    events.push({
-      type: "damage",
-      amount: totalLoss,
-    });
-  }
-
-  if (shieldGain > 0) {
-    events.push({
-      type: "shield",
-      amount: shieldGain,
-    });
-  }
-
-  if (energyGain > 0) {
-    events.push({
-      type: "energy",
-      amount: energyGain,
-    });
-  }
-
-  return events;
-}
-
 async function animateRoleStateChangeFeedback(role, previousPlayer, nextPlayer, options = {}) {
   const { targetDescriptors = [] } = options;
-  const events = getPlayerStateChangeEvents(previousPlayer, nextPlayer);
+  const effectAdjustmentsByRole = options.effectAdjustmentsByRole || {};
+  const events = getPlayerStateChangeEvents(previousPlayer, nextPlayer, effectAdjustmentsByRole[role]);
 
   for (const event of events) {
     const feedbackDelay =
@@ -1613,6 +2079,16 @@ async function animateRoleStateChangeFeedback(role, previousPlayer, nextPlayer, 
 
     if (event.type === "energy") {
       await Promise.all([animatePlayerBuff(role, "energize"), animatePlayerFloat(role, event)]);
+      continue;
+    }
+
+    if (event.type === "heal") {
+      await Promise.all([animatePlayerBuff(role, "heal"), animatePlayerFloat(role, event)]);
+      continue;
+    }
+
+    if (event.type === "buff" || event.type === "debuff" || event.type === "cleanse") {
+      await Promise.all([animatePlayerBuff(role, event.type), animatePlayerFloat(role, event)]);
     }
   }
 }
@@ -1714,13 +2190,38 @@ async function animateHandDiscards(role, stagedState, discardEntries = []) {
   return nextStagedState;
 }
 
+function mergePlayerSnapshot(baseState, playerSnapshot = {}) {
+  const nextState = structuredClone(baseState);
+
+  if (playerSnapshot.self) {
+    nextState.players.self = structuredClone(playerSnapshot.self);
+  }
+
+  if (playerSnapshot.enemy) {
+    nextState.players.enemy = structuredClone(playerSnapshot.enemy);
+  }
+
+  return nextState;
+}
+
+async function animateStateDelta(previousState, nextState, roles = ["self", "enemy"]) {
+  const targetDescriptors = getStateChangeTargetDescriptors(previousState, nextState, roles);
+
+  updatePlayer("enemy", nextState.players.enemy);
+  updatePlayer("self", nextState.players.self, { renderHandCards: false });
+  await animateStateChangeFeedback(previousState, nextState, roles, { targetDescriptors });
+}
+
 async function animateEnemyPlay(previousState, nextState, play) {
   const handRoot = document.querySelector('[data-hand="enemy"]');
   const sourceCard =
     handRoot?.querySelector(`[data-card-id="${play?.cardId}"]`) ||
     handRoot?.querySelector(".hand-card");
   const sourcePile = sourceCard || document.querySelector('[data-player="enemy"] [data-player-deck-stack]');
-  const targetDescriptors = getStateChangeTargetDescriptors(previousState, nextState);
+  const effectAdjustmentsByRole = getEffectFeedbackAdjustments(play?.effect);
+  const targetDescriptors = getStateChangeTargetDescriptors(previousState, nextState, ["self", "enemy"], {
+    effectAdjustmentsByRole,
+  });
 
   if (!gameScreen || !play?.card || !sourcePile) {
     updatePlayer("enemy", nextState.players.enemy);
@@ -1815,6 +2316,7 @@ async function animateEnemyPlay(previousState, nextState, play) {
 
   const feedbackAnimation = animateStateChangeFeedback(previousState, nextState, ["self", "enemy"], {
     targetDescriptors,
+    effectAdjustmentsByRole,
   });
 
   await Promise.all([
@@ -1842,10 +2344,24 @@ async function animateEnemyTurn(previousState, nextState) {
   const selfDiscards = nextState?.lastAction?.selfDiscard?.cards ?? [];
   const enemyDiscards = nextState?.lastAction?.enemyDiscard?.cards ?? [];
   const selfDraws = nextState?.lastAction?.selfDraw?.cards ?? [];
+  const selfEndPhase = nextState?.lastAction?.selfEndPhase ?? null;
+  const enemyEndPhase = nextState?.lastAction?.enemyEndPhase ?? null;
+  const selfStartPhase = nextState?.lastAction?.selfStartPhase ?? null;
 
   if (selfDiscards.length) {
     setBattleStatus(`${stagedState.players.self.name}随机弃置${selfDiscards.length}张手牌`, "info");
     stagedState = await animateHandDiscards("self", stagedState, selfDiscards);
+    await new Promise((resolve) => window.setTimeout(resolve, 180));
+  }
+
+  if (selfEndPhase?.state) {
+    if (selfEndPhase.summary) {
+      setBattleStatus(selfEndPhase.summary, "info");
+    }
+    const selfEndState = mergePlayerSnapshot(stagedState, selfEndPhase.state);
+    await animateStateDelta(stagedState, selfEndState);
+    stagedState = selfEndState;
+    currentBattleState = stagedState;
     await new Promise((resolve) => window.setTimeout(resolve, 180));
   }
 
@@ -1873,31 +2389,49 @@ async function animateEnemyTurn(previousState, nextState) {
   }
 
   for (const play of enemyTurn.plays ?? []) {
-    const enemyPlayState = structuredClone(stagedState);
-    removeCardFromHandState(enemyPlayState, "enemy", play.cardId, { discard: true });
+    let enemyPlayState = structuredClone(stagedState);
 
-    enemyPlayState.players.enemy.ep = Math.max(
-      0,
-      enemyPlayState.players.enemy.ep - (play.card?.cost ?? 0) + (play.effect?.energyGain ?? 0)
-    );
+    if (play.stateAfter) {
+      enemyPlayState = mergePlayerSnapshot(enemyPlayState, play.stateAfter);
+    } else {
+      removeCardFromHandState(enemyPlayState, "enemy", play.cardId, { discard: true });
 
-    if (play.effect?.kind === "attack") {
-      enemyPlayState.players.self.shield = Math.max(
+      enemyPlayState.players.enemy.ep = Math.max(
         0,
-        (enemyPlayState.players.self.shield || 0) - (play.effect?.blockedDamage ?? 0)
+        enemyPlayState.players.enemy.ep - (play.card?.cost ?? 0) + (play.effect?.energyGain ?? 0)
       );
-      enemyPlayState.players.self.hp = Math.max(
-        0,
-        enemyPlayState.players.self.hp - (play.effect?.dealtDamage ?? 0)
-      );
-    } else if (play.effect?.kind === "defend") {
-      enemyPlayState.players.enemy.shield =
-        (enemyPlayState.players.enemy.shield || 0) + (play.effect?.block ?? 0);
+
+      if ((play.effect?.dealtDamage ?? 0) > 0 || (play.effect?.blockedDamage ?? 0) > 0) {
+        enemyPlayState.players.self.shield = Math.max(
+          0,
+          (enemyPlayState.players.self.shield || 0) - (play.effect?.blockedDamage ?? 0)
+        );
+        enemyPlayState.players.self.hp = Math.max(
+          0,
+          enemyPlayState.players.self.hp - (play.effect?.dealtDamage ?? 0)
+        );
+      }
+
+      if ((play.effect?.block ?? 0) > 0) {
+        enemyPlayState.players.enemy.shield =
+          (enemyPlayState.players.enemy.shield || 0) + (play.effect?.block ?? 0);
+      }
     }
 
     await animateEnemyPlay(stagedState, enemyPlayState, play);
     stagedState = enemyPlayState;
     currentBattleState = stagedState;
+  }
+
+  if (enemyEndPhase?.state) {
+    if (enemyEndPhase.summary) {
+      setBattleStatus(enemyEndPhase.summary, "info");
+    }
+    const enemyEndState = mergePlayerSnapshot(stagedState, enemyEndPhase.state);
+    await animateStateDelta(stagedState, enemyEndState);
+    stagedState = enemyEndState;
+    currentBattleState = stagedState;
+    await new Promise((resolve) => window.setTimeout(resolve, 180));
   }
 
   if (enemyDiscards.length) {
@@ -1906,13 +2440,35 @@ async function animateEnemyTurn(previousState, nextState) {
     await new Promise((resolve) => window.setTimeout(resolve, 180));
   }
 
-  if (selfDraws.length) {
-    let beforeSelfDrawState = structuredClone(nextState);
+  if (selfStartPhase?.state) {
+    if (selfStartPhase.summary) {
+      setBattleStatus(selfStartPhase.summary, "info");
+    }
+    let selfStartState = mergePlayerSnapshot(stagedState, selfStartPhase.state);
+    selfStartState.currentTurn = "self";
+    selfStartState.turn = nextState.turn;
+    await animateStateDelta(stagedState, selfStartState);
+    stagedState = selfStartState;
+    currentBattleState = stagedState;
+    await new Promise((resolve) => window.setTimeout(resolve, 180));
+  }
 
-    [...selfDraws].reverse().forEach((draw) => {
-      removeCardFromHandState(beforeSelfDrawState, "self", draw.cardId);
-      beforeSelfDrawState.players.self.deckSize += 1;
-    });
+  if (selfDraws.length) {
+    let beforeSelfDrawState = selfStartPhase?.state
+      ? (() => {
+          const initialState = mergePlayerSnapshot(stagedState, selfStartPhase.state);
+          initialState.currentTurn = "self";
+          initialState.turn = nextState.turn;
+          return initialState;
+        })()
+      : structuredClone(nextState);
+
+    if (!selfStartPhase?.state) {
+      [...selfDraws].reverse().forEach((draw) => {
+        removeCardFromHandState(beforeSelfDrawState, "self", draw.cardId);
+        beforeSelfDrawState.players.self.deckSize += 1;
+      });
+    }
 
     renderBattleState(beforeSelfDrawState);
 
@@ -2005,13 +2561,17 @@ async function finishCardDrag(event) {
       updatePlayer("self", state.players.self, { renderHandCards: false });
       updateBattleStatus(state);
       currentBattleState = state;
-      const targetDescriptors = getStateChangeTargetDescriptors(previousState, state);
+      const effectAdjustmentsByRole = getEffectFeedbackAdjustments(state?.lastAction?.effect);
+      const targetDescriptors = getStateChangeTargetDescriptors(previousState, state, ["self", "enemy"], {
+        effectAdjustmentsByRole,
+      });
       const shatterAnimation = animateCardShatterToDiscard(card, {
         targetRole: "self",
         targetDescriptors,
       });
       const feedbackAnimation = animateStateChangeFeedback(previousState, state, ["self", "enemy"], {
         targetDescriptors,
+        effectAdjustmentsByRole,
       });
       await Promise.all([
         shatterAnimation,
@@ -2253,12 +2813,14 @@ function updatePlayer(role, playerState, options = {}) {
   const { renderHandCards = true } = options;
 
   const nameNode = card.querySelector("[data-player-name]");
+  const archetypeNode = card.querySelector("[data-player-archetype]");
   const avatarNode = card.querySelector("[data-player-avatar]");
   const deckNode = card.querySelector("[data-player-deck]");
   const deckStackNode = card.querySelector("[data-player-deck-stack]");
   const discardNode = card.querySelector("[data-player-discard]");
   const discardStackNode = card.querySelector("[data-player-discard-stack]");
   const handNode = card.querySelector("[data-player-hand]");
+  const statusStripNode = card.querySelector("[data-player-statuses]");
   const shieldBar = card.querySelector('[data-bar-root="shield"]');
   const hpBar = card.querySelector('[data-bar-root="hp"]');
   const epBar = card.querySelector('[data-bar-root="ep"]');
@@ -2267,12 +2829,17 @@ function updatePlayer(role, playerState, options = {}) {
   const discardDepth = Math.max(2, Math.round((playerState.discardCount / maxDeckSize) * 12));
 
   nameNode.textContent = playerState.name;
+  if (archetypeNode) {
+    archetypeNode.textContent = playerState.deckArchetype?.label || "通用流";
+    archetypeNode.title = playerState.deckArchetype?.description || "";
+  }
   avatarNode.textContent = playerState.avatar;
   deckNode.textContent = String(playerState.deckSize);
   deckStackNode.style.setProperty("--deck-depth", String(deckDepth));
   discardNode.textContent = String(playerState.discardCount);
   discardStackNode.style.setProperty("--deck-depth", String(discardDepth));
   handNode.textContent = String(playerState.hand?.length ?? playerState.handCount);
+  renderStatusStrip(statusStripNode, role, playerState.statuses ?? []);
   if (shieldBar) {
     updateShieldBar(shieldBar, playerState.shield ?? 0);
   }
@@ -2319,6 +2886,26 @@ async function fetchBattleState() {
   return response.json();
 }
 
+async function fetchBattleConfig() {
+  const response = await fetch("/api/battle-config", {
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to load battle config");
+  }
+
+  const data = await response.json();
+
+  if (!data.ok) {
+    throw new Error(data.error || "Failed to load battle config");
+  }
+
+  return data.config;
+}
+
 async function postBattleCommand(path, payload = {}) {
   const response = await fetch(path, {
     method: "POST",
@@ -2339,7 +2926,9 @@ async function postBattleCommand(path, payload = {}) {
 }
 
 function renderBattleState(state) {
+  hideStatusTooltip();
   currentBattleState = state;
+
   updatePlayer("enemy", state.players.enemy);
   updatePlayer("self", state.players.self);
   const activeCard = getCardById("self", activeSelfCardId);
@@ -2357,6 +2946,29 @@ function renderBattleState(state) {
   }
   updateBattleStatus(state);
   syncActionButtonsAvailability();
+}
+
+if (gameScreen) {
+  gameScreen.addEventListener("pointerdown", (event) => {
+    const statusChip = event.target.closest("[data-status-chip]");
+
+    if (!statusChip || !currentBattleState) {
+      return;
+    }
+    showStatusTooltip(statusChip);
+  });
+
+  gameScreen.addEventListener("pointerup", () => {
+    hideStatusTooltip();
+  });
+
+  gameScreen.addEventListener("pointercancel", () => {
+    hideStatusTooltip();
+  });
+
+  gameScreen.addEventListener("pointerleave", () => {
+    hideStatusTooltip();
+  });
 }
 
 async function handleActionClick(event) {
@@ -2381,7 +2993,10 @@ async function handleActionClick(event) {
       setBattleStatus("对手回合中", "info");
       await animateEnemyTurn(previousState, state);
     } else if (actionType === "reset") {
-      state = await postBattleCommand("/api/battle-reset");
+      state = await postBattleCommand("/api/battle-reset", {
+        selfArchetypeKey: selfArchetypeSelect?.value || null,
+        enemyArchetypeKey: enemyArchetypeSelect?.value || null,
+      });
       renderBattleState(state);
     } else {
       return;
@@ -2396,6 +3011,12 @@ async function handleActionClick(event) {
 
 async function loadBattleState() {
   try {
+    if (!battleConfig) {
+      battleConfig = await fetchBattleConfig();
+      populateArchetypeSelect(selfArchetypeSelect, battleConfig.selfArchetypes);
+      populateArchetypeSelect(enemyArchetypeSelect, battleConfig.enemyArchetypes);
+    }
+
     const state = await fetchBattleState();
     renderBattleState(state);
   } catch (error) {

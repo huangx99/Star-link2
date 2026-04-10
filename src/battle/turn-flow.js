@@ -2,6 +2,7 @@ const { PLAYER_MAX_EP_CAP, TURN_DRAW_CAP, TURN_END_HAND_LIMIT } = require("./con
 const { runDrawCards } = require("./actions/draw-card");
 const { discardRandomCardsToLimit } = require("./actions/discard-card");
 const { resetShield } = require("./effects/health");
+const { processStatusPhase } = require("./effects/statuses");
 const { getEnemyIntentForState } = require("./enemy-intents");
 
 function beginSelfTurn(state, options = {}) {
@@ -10,6 +11,7 @@ function beginSelfTurn(state, options = {}) {
   const parts = [];
   let drawnCards = [];
   let discardedCards = [];
+  let statusPhase = null;
 
   if (state.currentTurn === "self") {
     discardedCards = discardRandomCardsToLimit(state, "self", TURN_END_HAND_LIMIT);
@@ -23,6 +25,19 @@ function beginSelfTurn(state, options = {}) {
   self.maxEp = Math.min(PLAYER_MAX_EP_CAP, self.maxEp + 1);
   self.ep = self.maxEp;
   state.currentTurn = "self";
+
+  const turnStartStatusResult = processStatusPhase(self, "turn-start");
+
+  if (turnStartStatusResult.summaries.length) {
+    statusPhase = {
+      summary: turnStartStatusResult.summaries.join("，"),
+      state: {
+        self: structuredClone(state.players.self),
+        enemy: structuredClone(state.players.enemy),
+      },
+    };
+    parts.push(turnStartStatusResult.summaries.join("，"));
+  }
 
   if (summaryPrefix) {
     parts.push(summaryPrefix);
@@ -50,6 +65,7 @@ function beginSelfTurn(state, options = {}) {
       targetId: "self",
       summary,
       discardedCards,
+      statusPhase,
     };
   }
 
@@ -57,6 +73,7 @@ function beginSelfTurn(state, options = {}) {
     state,
     drawnCards,
     discardedCards,
+    statusPhase,
     summary,
   };
 }

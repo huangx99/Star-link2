@@ -1,7 +1,7 @@
 const { getCardTemplate } = require("./catalog");
 
-function createCard(ownerId, serial) {
-  const template = getCardTemplate(serial);
+function createCard(ownerId, serial, archetypeKey) {
+  const template = getCardTemplate(ownerId, serial, archetypeKey);
 
   return {
     id: `${ownerId}-card-${serial}`,
@@ -12,7 +12,12 @@ function createCard(ownerId, serial) {
     kind: template.kind,
     damage: template.damage ?? 0,
     block: template.block ?? 0,
+    heal: template.heal ?? 0,
     energyGain: template.energyGain ?? 0,
+    statusEffects: structuredClone(template.statusEffects ?? []),
+    cleanseEffects: structuredClone(template.cleanseEffects ?? []),
+    convertEffects: structuredClone(template.convertEffects ?? []),
+    statusBurstEffects: structuredClone(template.statusBurstEffects ?? []),
     summary: template.summary,
     description: template.description,
     accent: template.accent,

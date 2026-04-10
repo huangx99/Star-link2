@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const http = require("node:http");
-const { getBattleState, performBattleAction, resetBattleState } = require("./src/battle/engine");
+const { getBattleConfig, getBattleState, performBattleAction, resetBattleState } = require("./src/battle/engine");
 
 const host = process.env.HOST || "0.0.0.0";
 const port = Number(process.env.PORT || 9910);
@@ -110,10 +110,22 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (url.pathname === "/api/battle-reset" && req.method === "POST") {
+  if (url.pathname === "/api/battle-config" && req.method === "GET") {
     writeJson(res, 200, {
       ok: true,
-      state: resetBattleState(),
+      config: getBattleConfig(),
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/battle-reset" && req.method === "POST") {
+    const payload = await readJsonBody(req);
+    writeJson(res, 200, {
+      ok: true,
+      state: resetBattleState({
+        selfArchetypeKey: payload.selfArchetypeKey || null,
+        enemyArchetypeKey: payload.enemyArchetypeKey || null,
+      }),
     });
     return;
   }

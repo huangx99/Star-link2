@@ -68,6 +68,18 @@
         --state-energy-particle-fill: #8fdcff;
         --state-energy-particle-shade: #1d567d;
         --state-energy-particle-glow: #e3f7ff;
+        --state-heal-particle-fill: #9dffb7;
+        --state-heal-particle-shade: #256c3d;
+        --state-heal-particle-glow: #edfff1;
+        --state-buff-particle-fill: #c6ff8d;
+        --state-buff-particle-shade: #4d6f1d;
+        --state-buff-particle-glow: #f5ffd7;
+        --state-debuff-particle-fill: #ff9ac7;
+        --state-debuff-particle-shade: #7a2949;
+        --state-debuff-particle-glow: #ffe0ee;
+        --state-cleanse-particle-fill: #b9fff4;
+        --state-cleanse-particle-shade: #23655e;
+        --state-cleanse-particle-glow: #ebfffb;
         --shadow: 4px 4px 0 rgba(20, 14, 27, 0.9);
         --pixel-border: 2px solid #241b2f;
         --pixel-grid:
@@ -224,6 +236,30 @@
         color: var(--state-energy-float-text);
       }
 
+      .player-float.heal {
+        border-color: #d9ffe2;
+        background: #28593a;
+        color: #f3fff6;
+      }
+
+      .player-float.buff {
+        border-color: #efffc1;
+        background: #556d18;
+        color: #fbffef;
+      }
+
+      .player-float.debuff {
+        border-color: #ffd7e8;
+        background: #6a2945;
+        color: #fff1f7;
+      }
+
+      .player-float.cleanse {
+        border-color: #d2fff8;
+        background: #21534f;
+        color: #effffc;
+      }
+
       .player-card.is-taking-hit {
         animation: player-hit-shake 240ms cubic-bezier(0.22, 1, 0.36, 1);
       }
@@ -271,6 +307,30 @@
         animation: energy-bar-surge 500ms cubic-bezier(0.16, 1, 0.3, 1);
       }
 
+      .player-card.is-receiving-heal::after,
+      .player-card.is-gaining-status::after,
+      .player-card.is-losing-status::after {
+        animation: energy-bloom 500ms cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .player-card.is-receiving-heal::after {
+        background:
+          radial-gradient(circle at 50% 50%, rgba(135, 241, 164, 0.68) 0 26%, rgba(135, 241, 164, 0) 26% 100%),
+          linear-gradient(90deg, rgba(135, 241, 164, 0) 0 30%, rgba(135, 241, 164, 0.36) 50%, rgba(135, 241, 164, 0) 70% 100%);
+      }
+
+      .player-card.is-gaining-status::after {
+        background:
+          radial-gradient(circle at 50% 50%, rgba(205, 255, 118, 0.6) 0 26%, rgba(205, 255, 118, 0) 26% 100%),
+          linear-gradient(90deg, rgba(205, 255, 118, 0) 0 30%, rgba(205, 255, 118, 0.32) 50%, rgba(205, 255, 118, 0) 70% 100%);
+      }
+
+      .player-card.is-losing-status::after {
+        background:
+          radial-gradient(circle at 50% 50%, rgba(255, 150, 199, 0.6) 0 26%, rgba(255, 150, 199, 0) 26% 100%),
+          linear-gradient(90deg, rgba(255, 150, 199, 0) 0 30%, rgba(255, 150, 199, 0.32) 50%, rgba(255, 150, 199, 0) 70% 100%);
+      }
+
       .player-card.enemy {
         top: 10px;
       }
@@ -302,6 +362,11 @@
       }
 
       .player-card.self .player-hand-inline {
+        font-size: 6px;
+        padding: 1px 4px;
+      }
+
+      .player-card.self .player-deck-inline {
         font-size: 6px;
         padding: 1px 4px;
       }
@@ -434,6 +499,18 @@
         box-shadow: 2px 2px 0 rgba(20, 14, 27, 0.68);
       }
 
+      .player-deck-inline {
+        flex: 0 0 auto;
+        padding: 2px 5px;
+        border: var(--pixel-border);
+        background: #3a2816;
+        color: #ffe4a6;
+        font-size: 7px;
+        line-height: 1;
+        letter-spacing: 0.06em;
+        box-shadow: 2px 2px 0 rgba(20, 14, 27, 0.68);
+      }
+
       .player-hand-inline strong {
         font-weight: 800;
       }
@@ -549,6 +626,55 @@
         display: flex;
         flex-direction: column;
         gap: 3px;
+      }
+
+      .status-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 3px;
+        min-height: 14px;
+        margin-top: 3px;
+      }
+
+      .status-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        max-width: 100%;
+        font: inherit;
+        appearance: none;
+        padding: 1px 4px;
+        border: var(--pixel-border);
+        background: #2b2238;
+        color: #fff8ec;
+        font-size: 6px;
+        line-height: 1;
+        box-shadow: 2px 2px 0 rgba(20, 14, 27, 0.56);
+        cursor: pointer;
+      }
+
+      .status-chip.buff {
+        background: #4d5f1f;
+        color: #f8ffdf;
+      }
+
+      .status-chip.debuff {
+        background: #6f2947;
+        color: #fff0f6;
+      }
+
+      .status-chip.is-permanent {
+        background: #7a5a16;
+        color: #fff6cf;
+      }
+
+      .status-chip-label,
+      .status-chip-meta {
+        white-space: nowrap;
+      }
+
+      .status-chip-meta {
+        opacity: 0.9;
       }
 
       .status-row {
@@ -716,7 +842,9 @@
       .card-detail-kicker,
       .card-detail-name,
       .card-detail-empty,
-      .card-detail-effect {
+      .card-detail-effect,
+      .card-detail-status-title,
+      .card-detail-status-item {
         margin: 0;
       }
 
@@ -763,11 +891,142 @@
         line-height: 1.45;
       }
 
+      .card-detail-status-list {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        gap: 4px;
+        margin-top: 8px;
+      }
+
+      .card-detail-status-title {
+        color: var(--text-muted);
+        font-size: 6px;
+        letter-spacing: 0.08em;
+      }
+
+      .card-detail-status-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 5px;
+        color: #241b2f;
+        font-size: 6px;
+        line-height: 1.45;
+      }
+
+      .card-detail-status-dot {
+        flex: 0 0 6px;
+        width: 6px;
+        height: 6px;
+        margin-top: 2px;
+        background: currentColor;
+        box-shadow: 1px 1px 0 rgba(20, 14, 27, 0.55);
+      }
+
+      .status-tooltip {
+        position: absolute;
+        max-width: 132px;
+        padding: 6px;
+        border: 2px solid #fff0c6;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0 16%, rgba(255, 255, 255, 0) 16% 100%),
+          linear-gradient(180deg, #f7e7b6 0%, #d7bb73 100%);
+        color: #241b2f;
+        box-shadow:
+          0 0 0 2px #4b3720,
+          4px 4px 0 rgba(20, 14, 27, 0.86);
+        z-index: 120;
+        pointer-events: none;
+      }
+
+      .status-tooltip::before {
+        content: "";
+        position: absolute;
+        inset: 3px;
+        border: 2px solid rgba(63, 45, 23, 0.72);
+        pointer-events: none;
+      }
+
+      .status-tooltip-name,
+      .status-tooltip-meta,
+      .status-tooltip-desc {
+        position: relative;
+        z-index: 1;
+        margin: 0;
+      }
+
+      .status-tooltip-name {
+        color: var(--status-tooltip-accent, #7a5a16);
+        font-size: 7px;
+        font-weight: 800;
+        line-height: 1.2;
+      }
+
+      .status-tooltip-meta {
+        margin-top: 4px;
+        color: #6b5d72;
+        font-size: 6px;
+        line-height: 1.2;
+      }
+
+      .status-tooltip-desc {
+        margin-top: 4px;
+        font-size: 6px;
+        line-height: 1.45;
+      }
+
       .action-row {
         display: flex;
         justify-content: center;
         gap: 6px;
         flex-wrap: wrap;
+      }
+
+      .action-config-row {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+        width: min(100%, 236px);
+        margin: 0 auto 6px;
+      }
+
+      .action-config {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        text-align: left;
+      }
+
+      .action-config-label {
+        color: #f8efcf;
+        font-size: 7px;
+        line-height: 1.2;
+        text-shadow: 2px 2px 0 rgba(20, 14, 27, 0.82);
+      }
+
+      .action-select {
+        width: 100%;
+        border: var(--pixel-border);
+        border-radius: 0;
+        padding: 6px 18px 6px 6px;
+        background:
+          linear-gradient(180deg, #fff3c8 0 50%, #e9c972 50% 100%);
+        color: var(--text-main);
+        font: inherit;
+        font-size: 7px;
+        box-shadow: 3px 3px 0 rgba(20, 14, 27, 0.8);
+        appearance: none;
+        background-image:
+          linear-gradient(180deg, #fff3c8 0 50%, #e9c972 50% 100%),
+          linear-gradient(45deg, transparent 50%, #3a2b10 50%),
+          linear-gradient(135deg, #3a2b10 50%, transparent 50%);
+        background-repeat: no-repeat;
+        background-size: auto, 6px 6px, 6px 6px;
+        background-position: 0 0, calc(100% - 10px) 48%, calc(100% - 5px) 48%;
+      }
+
+      .action-select:disabled {
+        opacity: 0.56;
       }
 
       .action-button {
@@ -1419,6 +1678,7 @@
           <div class="player-main">
             <div class="player-title">
               <p class="player-name" data-player-name>对手</p>
+              <span class="player-deck-inline" data-player-archetype>流派</span>
               <span class="player-hand-inline">手牌 <strong data-player-hand>5</strong></span>
             </div>
             <div class="status-group">
@@ -1444,6 +1704,7 @@
                 <span class="bar-label">EP</span>
               </div>
             </div>
+            <div class="status-strip" data-player-statuses aria-label="对方状态"></div>
           </div>
         </div>
         <div class="pile-row">
@@ -1470,6 +1731,16 @@
         <h1>战斗准备</h1>
         <p class="turn-indicator" data-turn-indicator>第 1 回合 · 我方回合</p>
         <p class="battle-status" data-battle-status data-status-type="info">卡牌对局准备中</p>
+        <div class="action-config-row">
+          <label class="action-config">
+            <span class="action-config-label">我方流派</span>
+            <select class="action-select" data-archetype-select="self"></select>
+          </label>
+          <label class="action-config">
+            <span class="action-config-label">敌方流派</span>
+            <select class="action-select" data-archetype-select="enemy"></select>
+          </label>
+        </div>
         <div class="action-row">
           <button class="action-button" type="button" data-action="end-turn">结束回合</button>
           <button class="action-button" type="button" data-action="reset">重置</button>
@@ -1491,6 +1762,7 @@
           <div class="player-main">
             <div class="player-title">
               <p class="player-name" data-player-name>我方</p>
+              <span class="player-deck-inline" data-player-archetype>流派</span>
               <span class="player-hand-inline">手牌 <strong data-player-hand>5</strong></span>
             </div>
             <div class="status-group">
@@ -1516,6 +1788,7 @@
                 <span class="bar-label">EP</span>
               </div>
             </div>
+            <div class="status-strip" data-player-statuses aria-label="我方状态"></div>
           </div>
         </div>
         <div class="pile-row">

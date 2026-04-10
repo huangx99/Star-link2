@@ -4,6 +4,7 @@ const { runDrawCard } = require("./actions/draw-card");
 const { runEndTurn } = require("./actions/end-turn");
 const { runPlayCard } = require("./actions/play-card");
 const { cloneBattleState, createBattleState } = require("./state");
+const { getOwnerArchetypes } = require("./cards/catalog");
 
 let battleState = createBattleState();
 
@@ -11,9 +12,24 @@ function getBattleState() {
   return cloneBattleState(battleState);
 }
 
-function resetBattleState() {
-  battleState = createBattleState();
+function resetBattleState(options = {}) {
+  battleState = createBattleState(options);
   return getBattleState();
+}
+
+function getBattleConfig() {
+  return {
+    selfArchetypes: getOwnerArchetypes("self").map((archetype) => ({
+      key: archetype.key,
+      label: archetype.label,
+      description: archetype.description,
+    })),
+    enemyArchetypes: getOwnerArchetypes("enemy").map((archetype) => ({
+      key: archetype.key,
+      label: archetype.label,
+      description: archetype.description,
+    })),
+  };
 }
 
 function ensureBattleActive() {
@@ -46,6 +62,7 @@ function performBattleAction({ type, actorId, targetId, cardId }) {
 }
 
 module.exports = {
+  getBattleConfig,
   getBattleState,
   performBattleAction,
   resetBattleState,
