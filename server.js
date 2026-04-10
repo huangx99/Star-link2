@@ -8,6 +8,7 @@ const port = Number(process.env.PORT || 9910);
 const serviceName = process.env.SERVICE_NAME || "star-link2-page";
 const indexPath = path.join(__dirname, "index.html");
 const appScriptPath = path.join(__dirname, "app.js");
+const assetsRoot = path.join(__dirname, "assets");
 
 function readIndex() {
   return fs.readFileSync(indexPath);
@@ -15,6 +16,32 @@ function readIndex() {
 
 function readAppScript() {
   return fs.readFileSync(appScriptPath);
+}
+
+function getContentType(filePath) {
+  switch (path.extname(filePath).toLowerCase()) {
+    case ".js":
+      return "application/javascript; charset=utf-8";
+    case ".json":
+      return "application/json; charset=utf-8";
+    case ".html":
+      return "text/html; charset=utf-8";
+    case ".css":
+      return "text/css; charset=utf-8";
+    case ".wav":
+      return "audio/wav";
+    case ".png":
+      return "image/png";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".svg":
+      return "image/svg+xml";
+    case ".md":
+      return "text/markdown; charset=utf-8";
+    default:
+      return "application/octet-stream";
+  }
 }
 
 function getClientIp(req) {
@@ -150,6 +177,32 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === "/app.js" && req.method === "GET") {
     writeText(res, 200, "application/javascript; charset=utf-8", readAppScript());
+    return;
+  }
+
+  if (url.pathname.startsWith("/assets/") && req.method === "GET") {
+    const relativePath = decodeURIComponent(url.pathname.replace(/^\/assets\//, ""));
+    const assetPath = path.join(assetsRoot, relativePath);
+    const normalizedAssetsRoot = `${assetsRoot}${path.sep}`;
+
+    if (!(assetPath === assetsRoot || assetPath.startsWith(normalizedAssetsRoot))) {
+      writeJson(res, 403, {
+        ok: false,
+        error: "Forbidden",
+      });
+      return;
+    }
+
+    try {
+      const body = fs.readFileSync(assetPath);
+      writeText(res, 200, getContentType(assetPath), body);
+    } catch (error) {
+      writeJson(res, 404, {
+        ok: false,
+        error: "Not Found",
+        path: url.pathname,
+      });
+    }
     return;
   }
 

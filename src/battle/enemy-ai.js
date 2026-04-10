@@ -1,29 +1,29 @@
-const { PLAYER_DECK_SIZE, PLAYER_MAX_EP_CAP } = require("./constants");
-const { createCard } = require("./cards/factory");
 const { gainEnergy, spendAvailableEnergy } = require("./effects/energy");
 const { spendShield } = require("./effects/health");
 const { applyStatus, clearStatuses, getModifiedDamage, spendStatusStacks } = require("./effects/statuses");
 
-function peekNextDrawCards(player, count = 1) {
-  if (!player) {
-    return [];
-  }
+function cloneCooldowns(enemy) {
+  return {
+    ...(enemy?.skillCooldowns || {}),
+  };
+}
 
-  const drawCount = Math.max(0, Number(count) || 0);
-  const cards = [];
+function reduceSkillCooldowns(enemy) {
+  const nextCooldowns = cloneCooldowns(enemy);
 
-  for (let index = 0; index < drawCount; index += 1) {
-    const deckIndex = (player.nextDeckIndex || 0) + index;
-    const serial = player.deckOrder?.[deckIndex];
+  Object.keys(nextCooldowns).forEach((skillKey) => {
+    nextCooldowns[skillKey] = Math.max(0, (Number(nextCooldowns[skillKey]) || 0) - 1);
+  });
 
-    if (player.deckSize - index <= 0 || !serial || deckIndex >= PLAYER_DECK_SIZE) {
-      break;
-    }
+  enemy.skillCooldowns = nextCooldowns;
+  return nextCooldowns;
+}
 
-    cards.push(createCard(player.id, serial, player.deckArchetype?.key));
-  }
-
-  return cards;
+function prepareEnemyBossTurn(enemy) {
+  enemy.shield = 0;
+  enemy.ep = enemy.maxEp;
+  reduceSkillCooldowns(enemy);
+  return enemy;
 }
 
 function createSimState(actor, target) {
@@ -35,38 +35,39 @@ function createSimState(actor, target) {
     totalEnergyGain: 0,
     totalHeal: 0,
     totalStatusPressure: 0,
+    usedSkillKeys: [],
     plays: [],
   };
 }
 
 function getIncomingThreatEstimate(player, target) {
   const attackCards = (player?.hand ?? []).filter(
-    (card) => (card.damage ?? 0) > 0 || (card.convertEffects?.length ?? 0) > 0
+    (card) => (card.damage ?? 0) > 0 || (card.convertEffects?.length ?? 0) > 0 || (card.statusBurstEffects?.length ?? 0) > 0
   );
   const affordableCount = Math.min(Math.max(1, (player?.maxEp ?? 1) + 1), attackCards.length);
 
   return attackCards
     .sort(
       (left, right) =>
-        estimateCardDamage(player, target, right) - estimateCardDamage(player, target, left)
+        estimatePayloadDamage(player, target, right) - estimatePayloadDamage(player, target, left)
     )
     .slice(0, affordableCount)
-    .reduce((sum, card) => sum + estimateCardDamage(player, target, card), 0);
+    .reduce((sum, card) => sum + estimatePayloadDamage(player, target, card), 0);
 }
 
 function resolveConversionParticipant(actor, target, role) {
   return role === "target" ? target : actor;
 }
 
-function estimateCardDamage(actor, target, card) {
-  let totalDamage = Math.max(0, Number(card.damage) || 0);
+function estimatePayloadDamage(actor, target, payload) {
+  let totalDamage = Math.max(0, Number(payload.damage) || 0);
 
-  (card.convertEffects ?? []).forEach((convertEffect) => {
+  (payload.convertEffects ?? []).forEach((convertEffect) => {
     if (!["shield", "energy"].includes(convertEffect.resource) || convertEffect.to !== "damage") {
       return;
     }
 
-    const sourcePlayer = convertEffect.source === "target" ? null : actor;
+    const sourcePlayer = convertEffect.source === "target" ? target : actor;
 
     if (!sourcePlayer) {
       return;
@@ -86,7 +87,7 @@ function estimateCardDamage(actor, target, card) {
     totalDamage += Math.max(0, Math.floor(spent * multiplier) + bonus);
   });
 
-  (card.statusBurstEffects ?? []).forEach((burstEffect) => {
+  (payload.statusBurstEffects ?? []).forEach((burstEffect) => {
     if (burstEffect.to !== "damage") {
       return;
     }
@@ -131,23 +132,29 @@ function applySimulatedDamage(actor, damageTarget, amount, play, nextState) {
   }
 }
 
-function applySimulatedCard(simState, card) {
+function applySimulatedSkill(simState, skill) {
   const nextState = structuredClone(simState);
   const actor = nextState.actor;
   const target = nextState.target;
-  const cardIndex = actor.hand.findIndex((item) => item.id === card.id);
+  const cooldown = Number(actor.skillCooldowns?.[skill.key]) || 0;
 
-  if (cardIndex < 0 || actor.ep < card.cost) {
+  if (nextState.usedSkillKeys.includes(skill.key) || cooldown > 0 || actor.ep < skill.cost) {
     return null;
   }
 
-  actor.hand.splice(cardIndex, 1);
-  actor.ep -= card.cost;
+  actor.ep -= skill.cost;
+  nextState.usedSkillKeys.push(skill.key);
+
+  if (!actor.skillCooldowns) {
+    actor.skillCooldowns = {};
+  }
+
+  actor.skillCooldowns[skill.key] = Math.max(0, Number(skill.cooldown) || 0);
 
   const play = {
-    cardId: card.id,
-    card,
-    kind: card.kind,
+    cardId: skill.id,
+    card: skill,
+    kind: skill.kind,
     damage: 0,
     block: 0,
     heal: 0,
@@ -158,7 +165,7 @@ function applySimulatedCard(simState, card) {
     statusBursts: [],
   };
 
-  for (const convertEffect of card.convertEffects ?? []) {
+  for (const convertEffect of skill.convertEffects ?? []) {
     if (!["shield", "energy"].includes(convertEffect.resource) || convertEffect.to !== "damage") {
       continue;
     }
@@ -198,7 +205,7 @@ function applySimulatedCard(simState, card) {
     applySimulatedDamage(actor, damageTarget, produced, play, nextState);
   }
 
-  for (const burstEffect of card.statusBurstEffects ?? []) {
+  for (const burstEffect of skill.statusBurstEffects ?? []) {
     if (burstEffect.to !== "damage") {
       continue;
     }
@@ -236,29 +243,29 @@ function applySimulatedCard(simState, card) {
     applySimulatedDamage(actor, damageTarget, produced, play, nextState);
   }
 
-  if ((card.damage ?? 0) > 0) {
-    applySimulatedDamage(actor, target, card.damage ?? 0, play, nextState);
+  if ((skill.damage ?? 0) > 0) {
+    applySimulatedDamage(actor, target, skill.damage ?? 0, play, nextState);
   }
 
-  if ((card.block ?? 0) > 0) {
-    actor.shield = Math.max(0, actor.shield || 0) + Math.max(0, card.block ?? 0);
-    play.block = Math.max(0, card.block ?? 0);
+  if ((skill.block ?? 0) > 0) {
+    actor.shield = Math.max(0, actor.shield || 0) + Math.max(0, skill.block ?? 0);
+    play.block = Math.max(0, skill.block ?? 0);
     nextState.totalBlock += play.block;
   }
 
-  if ((card.energyGain ?? 0) > 0) {
-    play.energyGain = gainEnergy(actor, card.energyGain ?? 0);
+  if ((skill.energyGain ?? 0) > 0) {
+    play.energyGain = gainEnergy(actor, skill.energyGain ?? 0);
     nextState.totalEnergyGain += play.energyGain;
   }
 
-  if ((card.heal ?? 0) > 0) {
+  if ((skill.heal ?? 0) > 0) {
     const previousHp = actor.hp;
-    actor.hp = Math.min(actor.maxHp, actor.hp + Math.max(0, card.heal ?? 0));
+    actor.hp = Math.min(actor.maxHp, actor.hp + Math.max(0, skill.heal ?? 0));
     play.heal = Math.max(0, actor.hp - previousHp);
     nextState.totalHeal += play.heal;
   }
 
-  for (const statusEffect of card.statusEffects ?? []) {
+  for (const statusEffect of skill.statusEffects ?? []) {
     const statusTarget = statusEffect.target === "target" ? target : actor;
     const appliedStatus = applyStatus(statusTarget, statusEffect.key, {
       stacks: statusEffect.stacks,
@@ -266,7 +273,6 @@ function applySimulatedCard(simState, card) {
       permanent: statusEffect.permanent,
     });
 
-    play.appliedStatuses = play.appliedStatuses || [];
     play.appliedStatuses.push({
       targetRole: statusTarget.id,
       status: appliedStatus,
@@ -287,7 +293,7 @@ function applySimulatedCard(simState, card) {
     }
   }
 
-  for (const cleanseEffect of card.cleanseEffects ?? []) {
+  for (const cleanseEffect of skill.cleanseEffects ?? []) {
     const cleanseTarget = cleanseEffect.target === "target" ? target : actor;
     const removedStatuses = clearStatuses(
       cleanseTarget,
@@ -302,7 +308,6 @@ function applySimulatedCard(simState, card) {
     );
 
     if (removedStatuses.length) {
-      play.removedStatuses = play.removedStatuses || [];
       removedStatuses.forEach((status) => {
         play.removedStatuses.push({
           targetRole: cleanseTarget.id,
@@ -352,17 +357,20 @@ function scoreSimState(simState, context) {
 }
 
 function searchBestSequence(simState, context) {
-  const playableCards = simState.actor.hand.filter((card) => simState.actor.ep >= card.cost);
+  const playableSkills = (simState.actor.skills ?? []).filter((skill) => {
+    const cooldown = Number(simState.actor.skillCooldowns?.[skill.key]) || 0;
+    return cooldown <= 0 && !simState.usedSkillKeys.includes(skill.key) && simState.actor.ep >= skill.cost;
+  });
 
-  if (!playableCards.length) {
+  if (!playableSkills.length) {
     return simState;
   }
 
   let bestState = simState;
   let bestScore = scoreSimState(simState, context);
 
-  playableCards.forEach((card) => {
-    const nextState = applySimulatedCard(simState, card);
+  playableSkills.forEach((skill) => {
+    const nextState = applySimulatedSkill(simState, skill);
 
     if (!nextState) {
       return;
@@ -384,8 +392,8 @@ function formatIntent(plan) {
   if (!plan.plays.length) {
     return {
       key: "idle",
-      label: "观望",
-      preview: "准备结束回合",
+      label: "蓄势",
+      preview: "准备咆哮观望",
     };
   }
 
@@ -414,26 +422,24 @@ function formatIntent(plan) {
 }
 
 function planEnemyTurn(state, options = {}) {
-  const simulateDraw = options.simulateDraw !== false;
   const enemyTurnStateReady = options.enemyTurnStateReady === true;
-  const drawCount = Math.max(0, Number(options.drawCount ?? state.nextTurnDrawCount ?? 1) || 0);
   const enemy = structuredClone(state.players.enemy);
   const self = structuredClone(state.players.self);
 
-  if (!enemyTurnStateReady) {
-    enemy.maxEp = Math.min(PLAYER_MAX_EP_CAP, enemy.maxEp + 1);
-    enemy.ep = enemy.maxEp;
-    enemy.shield = 0;
+  if (enemy.controller !== "boss") {
+    return {
+      draws: [],
+      plays: [],
+      intent: {
+        key: "idle",
+        label: "待机",
+        preview: "暂无动作",
+      },
+    };
   }
 
-  let drawnCards = [];
-
-  if (simulateDraw) {
-    drawnCards = peekNextDrawCards(enemy, drawCount);
-    enemy.hand.push(...drawnCards);
-    enemy.handCount = enemy.hand.length;
-    enemy.deckSize = Math.max(0, enemy.deckSize - drawnCards.length);
-    enemy.nextDeckIndex = (enemy.nextDeckIndex || 0) + drawnCards.length;
+  if (!enemyTurnStateReady) {
+    prepareEnemyBossTurn(enemy);
   }
 
   const context = {
@@ -443,10 +449,7 @@ function planEnemyTurn(state, options = {}) {
   const bestState = searchBestSequence(createSimState(enemy, self), context);
 
   return {
-    draws: drawnCards.map((card) => ({
-      cardId: card.id,
-      card,
-    })),
+    draws: [],
     plays: bestState.plays,
     intent: formatIntent(bestState),
   };
@@ -454,4 +457,5 @@ function planEnemyTurn(state, options = {}) {
 
 module.exports = {
   planEnemyTurn,
+  prepareEnemyBossTurn,
 };

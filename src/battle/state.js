@@ -6,6 +6,8 @@ const {
 } = require("./constants");
 const { createCard } = require("./cards/factory");
 const { getDeckArchetype, getRandomDeckArchetype } = require("./cards/catalog");
+const { getBossProfile, getRandomBossProfile } = require("./enemies/catalog");
+const { createEnemySkill } = require("./enemies/factory");
 const { getEnemyIntentForState } = require("./enemy-intents");
 
 function createShuffledDeckOrder() {
@@ -23,7 +25,7 @@ function createOpeningHand(ownerId, archetypeKey, deckOrder) {
   return deckOrder.slice(0, PLAYER_HAND_SIZE).map((serial) => createCard(ownerId, serial, archetypeKey));
 }
 
-function createPlayerState({ id, name, avatar, archetypeKey }) {
+function createSelfPlayerState({ id, name, avatar, archetypeKey }) {
   const deckArchetype =
     (archetypeKey ? getDeckArchetype(id, archetypeKey) : null) ||
     getRandomDeckArchetype(id);
@@ -54,6 +56,40 @@ function createPlayerState({ id, name, avatar, archetypeKey }) {
   };
 }
 
+function createEnemyBossState({ id, name, avatar, bossKey }) {
+  const bossProfile =
+    (bossKey ? getBossProfile(bossKey) : null) ||
+    getRandomBossProfile();
+  const skills = bossProfile.skills.map((skillTemplate) => createEnemySkill(id, skillTemplate));
+  const skillCooldowns = Object.fromEntries(skills.map((skill) => [skill.key, 0]));
+
+  return {
+    id,
+    name,
+    avatar: bossProfile.avatar || avatar,
+    controller: "boss",
+    statuses: [],
+    deckArchetype: {
+      key: bossProfile.key,
+      label: bossProfile.label,
+      description: bossProfile.description,
+    },
+    hp: bossProfile.maxHp ?? PLAYER_MAX_HP,
+    maxHp: bossProfile.maxHp ?? PLAYER_MAX_HP,
+    shield: 0,
+    ep: bossProfile.baseEp ?? PLAYER_MAX_EP,
+    maxEp: bossProfile.baseEp ?? PLAYER_MAX_EP,
+    deckSize: 0,
+    handCount: 0,
+    discardCount: 0,
+    deckOrder: [],
+    nextDeckIndex: 0,
+    hand: [],
+    skills,
+    skillCooldowns,
+  };
+}
+
 function createBattleState(options = {}) {
   const selfArchetypeKey = options.selfArchetypeKey || null;
   const enemyArchetypeKey = options.enemyArchetypeKey || null;
@@ -70,13 +106,13 @@ function createBattleState(options = {}) {
       summary: "",
     },
     players: {
-      enemy: createPlayerState({
+      enemy: createEnemyBossState({
         id: "enemy",
         name: "对手",
         avatar: "敌",
-        archetypeKey: enemyArchetypeKey,
+        bossKey: enemyArchetypeKey,
       }),
-      self: createPlayerState({
+      self: createSelfPlayerState({
         id: "self",
         name: "我方",
         avatar: "我",

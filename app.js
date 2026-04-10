@@ -18,6 +18,30 @@ let activeSelfCardId = null;
 let lastSelectedSelfCard = null;
 let activeStatusTooltip = null;
 let battleConfig = null;
+const DEFAULT_SFX_FILES = {
+  "ui-hover": "/assets/audio/sfx/ui-hover.wav",
+  "ui-confirm": "/assets/audio/sfx/ui-confirm.wav",
+  "ui-cancel": "/assets/audio/sfx/ui-cancel.wav",
+  "card-pickup": "/assets/audio/sfx/card-pickup.wav",
+  "card-play": "/assets/audio/sfx/card-play.wav",
+  "hit-light": "/assets/audio/sfx/hit-light.wav",
+  "hit-heavy": "/assets/audio/sfx/hit-heavy.wav",
+  "shield-gain": "/assets/audio/sfx/shield-gain.wav",
+  "energy-gain": "/assets/audio/sfx/energy-gain.wav",
+  "buff-apply": "/assets/audio/sfx/buff-apply.wav",
+  "debuff-apply": "/assets/audio/sfx/debuff-apply.wav",
+  "turn-end": "/assets/audio/sfx/turn-end.wav",
+  "boss-skill": "/assets/audio/sfx/boss-skill.wav",
+};
+const audioState = {
+  context: null,
+  masterGain: null,
+  manifest: null,
+  manifestPromise: null,
+  bufferPromises: new Map(),
+  primed: false,
+  lastPlayedAt: new Map(),
+};
 
 const STATUS_DETAIL_THEME = {
   sharpness: {
@@ -51,6 +75,254 @@ const STATUS_DETAIL_THEME = {
     description: "清除目标身上的负面状态。",
   },
 };
+
+function getAudioContextCtor() {
+  return window.AudioContext || window.webkitAudioContext || null;
+}
+
+function canUseSfx() {
+  return typeof window !== "undefined" && typeof fetch === "function" && Boolean(getAudioContextCtor());
+}
+
+async function ensureAudioContext() {
+  if (!canUseSfx()) {
+    return null;
+  }
+
+  if (audioState.context) {
+    return audioState.context;
+  }
+
+  const AudioContextCtor = getAudioContextCtor();
+  const context = new AudioContextCtor();
+  const masterGain = context.createGain();
+
+  masterGain.gain.value = 0.5;
+  masterGain.connect(context.destination);
+  audioState.context = context;
+  audioState.masterGain = masterGain;
+  return context;
+}
+
+function flattenSfxManifest(manifest) {
+  const files = { ...DEFAULT_SFX_FILES };
+
+  Object.values(manifest?.groups || {}).forEach((entries) => {
+    (entries || []).forEach((entry) => {
+      if (!entry?.key || !entry?.file) {
+        return;
+      }
+
+      files[entry.key] = `/assets/audio/sfx/${entry.file}`;
+    });
+  });
+
+  return files;
+}
+
+async function loadSfxManifest() {
+  if (audioState.manifest) {
+    return audioState.manifest;
+  }
+
+  if (!audioState.manifestPromise) {
+    audioState.manifestPromise = fetch("/assets/audio/sfx/manifest.json", {
+      headers: {
+        Accept: "application/json",
+      },
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Failed to load sfx manifest");
+        }
+
+        return response.json();
+      })
+      .then((manifest) => {
+        audioState.manifest = flattenSfxManifest(manifest);
+        return audioState.manifest;
+      })
+      .catch(() => {
+        audioState.manifest = { ...DEFAULT_SFX_FILES };
+        return audioState.manifest;
+      });
+  }
+
+  return audioState.manifestPromise;
+}
+
+async function resolveSfxUrl(key) {
+  const manifest = await loadSfxManifest();
+  return manifest[key] || DEFAULT_SFX_FILES[key] || null;
+}
+
+async function loadSfxBuffer(key) {
+  if (audioState.bufferPromises.has(key)) {
+    return audioState.bufferPromises.get(key);
+  }
+
+  const bufferPromise = (async () => {
+    const context = await ensureAudioContext();
+    const url = await resolveSfxUrl(key);
+
+    if (!context || !url) {
+      return null;
+    }
+
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`Failed to load sfx: ${key}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    return context.decodeAudioData(arrayBuffer.slice(0));
+  })().catch(() => null);
+
+  audioState.bufferPromises.set(key, bufferPromise);
+  return bufferPromise;
+}
+
+async function primeSfx() {
+  if (audioState.primed || !canUseSfx()) {
+    return;
+  }
+
+  audioState.primed = true;
+
+  try {
+    const context = await ensureAudioContext();
+
+    if (context?.state === "suspended") {
+      await context.resume();
+    }
+
+    const manifest = await loadSfxManifest();
+    Object.keys(manifest).forEach((key) => {
+      void loadSfxBuffer(key);
+    });
+  } catch (error) {
+    audioState.primed = false;
+  }
+}
+
+function shouldThrottleSfx(key, minInterval = 72) {
+  const now = performance.now();
+  const lastPlayedAt = audioState.lastPlayedAt.get(key) || 0;
+
+  if (now - lastPlayedAt < minInterval) {
+    return true;
+  }
+
+  audioState.lastPlayedAt.set(key, now);
+  return false;
+}
+
+async function playSfx(key, options = {}) {
+  if (!key || !canUseSfx()) {
+    return;
+  }
+
+  const { volume = 1, playbackRate = 1, detune = 0, throttleMs = 72 } = options;
+
+  if (throttleMs > 0 && shouldThrottleSfx(key, throttleMs)) {
+    return;
+  }
+
+  try {
+    const context = await ensureAudioContext();
+
+    if (!context) {
+      return;
+    }
+
+    if (context.state === "suspended") {
+      await context.resume();
+    }
+
+    const buffer = await loadSfxBuffer(key);
+
+    if (!buffer || !audioState.masterGain) {
+      return;
+    }
+
+    const source = context.createBufferSource();
+    const gainNode = context.createGain();
+
+    source.buffer = buffer;
+    source.playbackRate.value = playbackRate;
+    source.detune.value = detune;
+    gainNode.gain.value = volume;
+    source.connect(gainNode);
+    gainNode.connect(audioState.masterGain);
+    source.start(0);
+  } catch (error) {
+    return;
+  }
+}
+
+function getDamageSfxKey(amount) {
+  return amount >= 8 ? "hit-heavy" : "hit-light";
+}
+
+function playStateEventSfx(event) {
+  if (!event) {
+    return;
+  }
+
+  if (event.type === "damage") {
+    void playSfx(getDamageSfxKey(event.amount), {
+      volume: event.amount >= 8 ? 0.98 : 0.82,
+      playbackRate: event.amount >= 8 ? 0.92 : 1.04,
+      throttleMs: 52,
+    });
+    return;
+  }
+
+  if (event.type === "shield") {
+    void playSfx("shield-gain", {
+      volume: 0.84,
+      playbackRate: 1.02,
+      throttleMs: 52,
+    });
+    return;
+  }
+
+  if (event.type === "energy") {
+    void playSfx("energy-gain", {
+      volume: 0.82,
+      playbackRate: 1.06,
+      throttleMs: 52,
+    });
+    return;
+  }
+
+  if (event.type === "heal") {
+    void playSfx("buff-apply", {
+      volume: 0.72,
+      playbackRate: 1.08,
+      throttleMs: 52,
+    });
+    return;
+  }
+
+  if (event.type === "buff" || event.type === "cleanse") {
+    void playSfx("buff-apply", {
+      volume: 0.68,
+      playbackRate: 1.08,
+      throttleMs: 52,
+    });
+    return;
+  }
+
+  if (event.type === "debuff") {
+    void playSfx("debuff-apply", {
+      volume: 0.72,
+      playbackRate: 0.96,
+      throttleMs: 52,
+    });
+  }
+}
 
 function setBattleStatus(message, type = "info") {
   if (!battleStatus) {
@@ -424,6 +696,7 @@ function setActiveHandCard(handRoot, activeCard) {
     return;
   }
 
+  const previousActiveCardId = handRoot === selfHandRoot ? activeSelfCardId : null;
   clearActiveHandCard(handRoot);
 
   if (!activeCard) {
@@ -437,6 +710,14 @@ function setActiveHandCard(handRoot, activeCard) {
     activeSelfCardId = activeCard.dataset.cardId || null;
     lastSelectedSelfCard = getCardById("self", activeSelfCardId);
     renderCardDetail(lastSelectedSelfCard);
+
+    if (activeSelfCardId && activeSelfCardId !== previousActiveCardId) {
+      void playSfx("ui-hover", {
+        volume: 0.28,
+        playbackRate: 1.04,
+        throttleMs: 96,
+      });
+    }
   }
 }
 
@@ -1214,6 +1495,10 @@ function waitForAnimation(animation, duration) {
 
 function waitForNextFrame() {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+function isBossController(playerState) {
+  return playerState?.controller === "boss";
 }
 
 function reserveEmptySelfHandHeight(handRoot, role, previousHand = []) {
@@ -2067,6 +2352,8 @@ async function animateRoleStateChangeFeedback(role, previousPlayer, nextPlayer, 
       await new Promise((resolve) => window.setTimeout(resolve, feedbackDelay));
     }
 
+    playStateEventSfx(event);
+
     if (event.type === "damage") {
       await Promise.all([animatePlayerHit(role), animatePlayerFloat(role, event)]);
       continue;
@@ -2213,11 +2500,17 @@ async function animateStateDelta(previousState, nextState, roles = ["self", "ene
 }
 
 async function animateEnemyPlay(previousState, nextState, play) {
+  const enemyState = previousState?.players?.enemy;
+  const enemyIsBoss = isBossController(enemyState);
   const handRoot = document.querySelector('[data-hand="enemy"]');
-  const sourceCard =
-    handRoot?.querySelector(`[data-card-id="${play?.cardId}"]`) ||
-    handRoot?.querySelector(".hand-card");
-  const sourcePile = sourceCard || document.querySelector('[data-player="enemy"] [data-player-deck-stack]');
+  const sourceCard = enemyIsBoss
+    ? null
+    : handRoot?.querySelector(`[data-card-id="${play?.cardId}"]`) || handRoot?.querySelector(".hand-card");
+  const sourcePile = enemyIsBoss
+    ? document.querySelector('[data-player="enemy"] [data-player-avatar]') ||
+      document.querySelector('[data-player="enemy"] .player-info') ||
+      document.querySelector('[data-player="enemy"]')
+    : sourceCard || document.querySelector('[data-player="enemy"] [data-player-deck-stack]');
   const effectAdjustmentsByRole = getEffectFeedbackAdjustments(play?.effect);
   const targetDescriptors = getStateChangeTargetDescriptors(previousState, nextState, ["self", "enemy"], {
     effectAdjustmentsByRole,
@@ -2237,6 +2530,12 @@ async function animateEnemyPlay(previousState, nextState, play) {
   const targetY = gameRect.top + gameRect.height / 2 - sourceRect.top - sourceRect.height / 2;
   const reflowDuration = 760;
 
+  void playSfx(enemyIsBoss || play?.card?.isSkill ? "boss-skill" : "card-play", {
+    volume: enemyIsBoss ? 0.92 : 0.72,
+    playbackRate: enemyIsBoss ? 0.96 : 1,
+    throttleMs: 44,
+  });
+
   targetCard.classList.add("draw-flight-card");
   targetCard.setAttribute("aria-hidden", "true");
   targetCard.style.left = `${sourceRect.left - gameRect.left}px`;
@@ -2249,12 +2548,14 @@ async function animateEnemyPlay(previousState, nextState, play) {
   }
 
   gameScreen.appendChild(targetCard);
-  const reflowAnimation = animateHandReflow(
-    "enemy",
-    previousState?.players?.enemy?.hand ?? [],
-    nextState?.players?.enemy?.hand ?? [],
-    reflowDuration
-  );
+  const reflowAnimation = enemyIsBoss
+    ? Promise.resolve()
+    : animateHandReflow(
+        "enemy",
+        previousState?.players?.enemy?.hand ?? [],
+        nextState?.players?.enemy?.hand ?? [],
+        reflowDuration
+      );
   gameScreen.getBoundingClientRect();
   await waitForNextFrame();
 
@@ -2500,6 +2801,11 @@ function beginCardDrag(event, card) {
     startY: event.clientY,
   };
 
+  void playSfx("card-pickup", {
+    volume: 0.62,
+    playbackRate: 1.02,
+    throttleMs: 72,
+  });
   card.classList.add("is-dragging");
   setActiveHandCard(selfHandRoot, card);
   card.setPointerCapture(event.pointerId);
@@ -2551,6 +2857,12 @@ async function finishCardDrag(event) {
       setActionButtonsDisabled(true);
       const previousState = currentBattleState;
 
+      void playSfx("card-play", {
+        volume: 0.78,
+        playbackRate: 1,
+        throttleMs: 40,
+      });
+
       const state = await postBattleCommand("/api/battle-action", {
         type: "play-card",
         actorId: "self",
@@ -2561,6 +2873,11 @@ async function finishCardDrag(event) {
       updatePlayer("self", state.players.self, { renderHandCards: false });
       updateBattleStatus(state);
       currentBattleState = state;
+      if (activeSelfCardId === cardId) {
+        activeSelfCardId = null;
+        lastSelectedSelfCard = null;
+        renderCardDetail(null);
+      }
       const effectAdjustmentsByRole = getEffectFeedbackAdjustments(state?.lastAction?.effect);
       const targetDescriptors = getStateChangeTargetDescriptors(previousState, state, ["self", "enemy"], {
         effectAdjustmentsByRole,
@@ -2573,7 +2890,7 @@ async function finishCardDrag(event) {
         targetDescriptors,
         effectAdjustmentsByRole,
       });
-      await Promise.all([
+      void Promise.all([
         shatterAnimation,
         feedbackAnimation,
         animateHandReflow(
@@ -2582,10 +2899,14 @@ async function finishCardDrag(event) {
           state.players.self.hand,
           shatterAnimation.totalDuration
         ),
-      ]);
-      clearActiveHandCard(selfHandRoot);
+      ]).catch(() => undefined);
       return;
     } catch (error) {
+      void playSfx("ui-cancel", {
+        volume: 0.66,
+        playbackRate: 1,
+        throttleMs: 72,
+      });
       await animateCardReturnToHand(card);
       clearActiveHandCard(selfHandRoot);
       setBattleStatus(error.message, "error");
@@ -2827,24 +3148,36 @@ function updatePlayer(role, playerState, options = {}) {
   const maxDeckSize = 30;
   const deckDepth = Math.max(3, Math.round((playerState.deckSize / maxDeckSize) * 12));
   const discardDepth = Math.max(2, Math.round((playerState.discardCount / maxDeckSize) * 12));
+  const playerIsBoss = isBossController(playerState);
 
+  card.dataset.controller = playerState.controller || "deck";
   nameNode.textContent = playerState.name;
   if (archetypeNode) {
     archetypeNode.textContent = playerState.deckArchetype?.label || "通用流";
     archetypeNode.title = playerState.deckArchetype?.description || "";
   }
   avatarNode.textContent = playerState.avatar;
-  deckNode.textContent = String(playerState.deckSize);
-  deckStackNode.style.setProperty("--deck-depth", String(deckDepth));
-  discardNode.textContent = String(playerState.discardCount);
-  discardStackNode.style.setProperty("--deck-depth", String(discardDepth));
+  if (deckNode) {
+    deckNode.textContent = String(playerState.deckSize);
+  }
+  if (deckStackNode) {
+    deckStackNode.style.setProperty("--deck-depth", String(deckDepth));
+  }
+  if (discardNode) {
+    discardNode.textContent = String(playerState.discardCount);
+  }
+  if (discardStackNode) {
+    discardStackNode.style.setProperty("--deck-depth", String(discardDepth));
+  }
   handNode.textContent = String(playerState.hand?.length ?? playerState.handCount);
   renderStatusStrip(statusStripNode, role, playerState.statuses ?? []);
   if (shieldBar) {
     updateShieldBar(shieldBar, playerState.shield ?? 0);
   }
-  if (renderHandCards) {
+  if (renderHandCards && !playerIsBoss) {
     renderHand(role, playerState.hand);
+  } else if (playerIsBoss && role === "enemy") {
+    renderHand(role, []);
   }
   updateBar(hpBar, playerState.hp, playerState.maxHp);
   updateBar(epBar, playerState.ep, playerState.maxEp);
@@ -2929,6 +3262,10 @@ function renderBattleState(state) {
   hideStatusTooltip();
   currentBattleState = state;
 
+  if (gameScreen) {
+    gameScreen.dataset.enemyController = state?.players?.enemy?.controller || "deck";
+  }
+
   updatePlayer("enemy", state.players.enemy);
   updatePlayer("self", state.players.self);
   const activeCard = getCardById("self", activeSelfCardId);
@@ -2982,10 +3319,16 @@ async function handleActionClick(event) {
   try {
     isResolvingAction = true;
     setActionButtonsDisabled(true);
+    void primeSfx();
 
     let state;
 
     if (actionType === "end-turn") {
+      void playSfx("turn-end", {
+        volume: 0.72,
+        playbackRate: 1,
+        throttleMs: 80,
+      });
       state = await postBattleCommand("/api/battle-action", {
         type: "end-turn",
         actorId: "self",
@@ -2993,6 +3336,11 @@ async function handleActionClick(event) {
       setBattleStatus("对手回合中", "info");
       await animateEnemyTurn(previousState, state);
     } else if (actionType === "reset") {
+      void playSfx("ui-confirm", {
+        volume: 0.74,
+        playbackRate: 1.04,
+        throttleMs: 80,
+      });
       state = await postBattleCommand("/api/battle-reset", {
         selfArchetypeKey: selfArchetypeSelect?.value || null,
         enemyArchetypeKey: enemyArchetypeSelect?.value || null,
@@ -3002,6 +3350,11 @@ async function handleActionClick(event) {
       return;
     }
   } catch (error) {
+    void playSfx("ui-cancel", {
+      volume: 0.68,
+      playbackRate: 1,
+      throttleMs: 80,
+    });
     setBattleStatus(error.message, "error");
   } finally {
     isResolvingAction = false;
@@ -3097,8 +3450,34 @@ document.addEventListener("gesturestart", (event) => {
 });
 
 actionButtons.forEach((button) => {
+  button.addEventListener("pointerenter", () => {
+    void playSfx("ui-hover", {
+      volume: 0.24,
+      playbackRate: 1.05,
+      throttleMs: 96,
+    });
+  });
+});
+
+actionButtons.forEach((button) => {
   button.addEventListener("click", handleActionClick);
 });
+
+window.addEventListener(
+  "pointerdown",
+  () => {
+    void primeSfx();
+  },
+  { once: true }
+);
+
+window.addEventListener(
+  "keydown",
+  () => {
+    void primeSfx();
+  },
+  { once: true }
+);
 
 resetFxCanvas();
 loadBattleState();
