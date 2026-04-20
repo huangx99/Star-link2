@@ -1,5 +1,5 @@
 const { getEnemyIntentForState } = require("../enemy-intents");
-const { planEnemyTurn } = require("../enemy-ai");
+const { planEnemyTurn, prepareEnemyBossTurn } = require("../enemy-ai");
 const { canPlayCard, resolveCardEffect } = require("../cards/logic");
 const { PLAYER_MAX_EP_CAP, TURN_DRAW_CAP, TURN_END_HAND_LIMIT } = require("../constants");
 const { runDrawCards } = require("./draw-card");
@@ -10,7 +10,7 @@ const { processStatusPhase } = require("../effects/statuses");
 
 function formatEnemyTurnSummary(enemy, target, plays = []) {
   if (!plays.length) {
-    return `${enemy.name}没有打出手牌`;
+    return enemy.controller === "boss" ? `${enemy.name}没有发动技能` : `${enemy.name}没有打出手牌`;
   }
 
   const damage = plays.reduce((sum, play) => sum + (play.effect?.dealtDamage ?? 0), 0);
@@ -43,6 +43,10 @@ function formatEnemyTurnSummary(enemy, target, plays = []) {
 
   if (removedStatusCount > 0) {
     parts.push(`清理${removedStatusCount}个状态`);
+  }
+
+  if (enemy.controller === "boss") {
+    return `${enemy.name}发动${plays.length}个技能，${parts.join("，") || `持续压制${target.name}`}`;
   }
 
   return `${enemy.name}打出${plays.length}张牌，${parts.join("，") || `对${target.name}施压`}`;
@@ -96,14 +100,24 @@ function runEndTurn(state, actorId) {
   state.currentTurn = "enemy";
   self.ep = 0;
 
-  resetShield(enemy);
-  enemy.maxEp = Math.min(PLAYER_MAX_EP_CAP, enemy.maxEp + 1);
-  enemy.ep = enemy.maxEp;
+  if (enemy.controller === "boss") {
+    prepareEnemyBossTurn(enemy);
+  } else {
+    resetShield(enemy);
+    enemy.maxEp = Math.min(PLAYER_MAX_EP_CAP, enemy.maxEp + 1);
+    enemy.ep = enemy.maxEp;
+  }
 
-  const enemyDrawnCards = runDrawCards(state, "enemy", state.nextTurnDrawCount, {
-    suppressLastAction: true,
-  });
-  state.nextTurnDrawCount = Math.min(TURN_DRAW_CAP, state.nextTurnDrawCount + 1);
+  const enemyDrawnCards =
+    enemy.controller === "boss"
+      ? []
+      : runDrawCards(state, "enemy", state.nextTurnDrawCount, {
+          suppressLastAction: true,
+        });
+
+  if (enemy.controller !== "boss") {
+    state.nextTurnDrawCount = Math.min(TURN_DRAW_CAP, state.nextTurnDrawCount + 1);
+  }
 
   const plan = planEnemyTurn(state, {
     simulateDraw: false,
@@ -112,22 +126,28 @@ function runEndTurn(state, actorId) {
   const plays = [];
 
   for (const plannedPlay of plan.plays) {
-    const cardIndex = enemy.hand.findIndex((card) => card.id === plannedPlay.cardId);
+    const playedCard =
+      enemy.controller === "boss"
+        ? enemy.skills.find((skill) => skill.id === plannedPlay.cardId || skill.key === plannedPlay.card?.key)
+        : enemy.hand.find((card) => card.id === plannedPlay.cardId);
 
-    if (cardIndex < 0) {
+    if (!playedCard || !canPlayCard(enemy, playedCard)) {
       continue;
     }
 
-    const cardToPlay = enemy.hand[cardIndex];
+    if (enemy.controller !== "boss") {
+      const cardIndex = enemy.hand.findIndex((card) => card.id === playedCard.id);
 
-    if (!canPlayCard(enemy, cardToPlay)) {
-      continue;
+      if (cardIndex < 0) {
+        continue;
+      }
+
+      enemy.hand.splice(cardIndex, 1);
+      enemy.handCount = enemy.hand.length;
+      enemy.discardCount += 1;
+    } else if (playedCard.cooldown > 0) {
+      enemy.skillCooldowns[playedCard.key] = playedCard.cooldown;
     }
-
-    const [playedCard] = enemy.hand.splice(cardIndex, 1);
-
-    enemy.handCount = enemy.hand.length;
-    enemy.discardCount += 1;
 
     const effect = resolveCardEffect(enemy, self, playedCard);
 
@@ -227,7 +247,10 @@ function runEndTurn(state, actorId) {
     return state;
   }
 
-  const enemyDiscardedCards = discardRandomCardsToLimit(state, "enemy", TURN_END_HAND_LIMIT);
+  const enemyDiscardedCards =
+    enemy.controller === "boss"
+      ? []
+      : discardRandomCardsToLimit(state, "enemy", TURN_END_HAND_LIMIT);
   const enemyDiscardSummary = enemyDiscardedCards.length
     ? `${enemy.name}随机弃置${enemyDiscardedCards.length}张手牌`
     : "";

@@ -1061,6 +1061,10 @@
         top: 130px;
       }
 
+      .game-screen[data-enemy-controller="boss"] .hand-zone.enemy {
+        display: none;
+      }
+
       .hand-zone.self {
         bottom: 124px;
         pointer-events: auto;
@@ -1186,6 +1190,15 @@
 
       .hand-zone.enemy .hand-card {
         transform-origin: center top;
+      }
+
+      .player-card.enemy[data-controller="boss"] .player-hand-inline,
+      .player-card.enemy[data-controller="boss"] .pile-row {
+        display: none;
+      }
+
+      .player-card.enemy[data-controller="boss"] .player-title {
+        gap: 6px;
       }
 
       .hand-zone.self .hand-card {

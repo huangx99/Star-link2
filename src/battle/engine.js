@@ -5,6 +5,7 @@ const { runEndTurn } = require("./actions/end-turn");
 const { runPlayCard } = require("./actions/play-card");
 const { cloneBattleState, createBattleState } = require("./state");
 const { getOwnerArchetypes } = require("./cards/catalog");
+const { getBossProfiles } = require("./enemies/catalog");
 
 let battleState = createBattleState();
 
@@ -24,10 +25,10 @@ function getBattleConfig() {
       label: archetype.label,
       description: archetype.description,
     })),
-    enemyArchetypes: getOwnerArchetypes("enemy").map((archetype) => ({
-      key: archetype.key,
-      label: archetype.label,
-      description: archetype.description,
+    enemyArchetypes: getBossProfiles().map((boss) => ({
+      key: boss.key,
+      label: boss.label,
+      description: boss.description,
     })),
   };
 }

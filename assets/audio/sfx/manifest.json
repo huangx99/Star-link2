@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "format": "wav",
+  "sampleRate": 22050,
+  "channels": 1,
+  "groups": {
+    "ui": [
+      {
+        "key": "ui-hover",
+        "file": "ui-hover.wav",
+        "usage": "按钮 hover、卡牌悬停、轻提示"
+      },
+      {
+        "key": "ui-confirm",
+        "file": "ui-confirm.wav",
+        "usage": "确认、重置成功、结算确认"
+      },
+      {
+        "key": "ui-cancel",
+        "file": "ui-cancel.wav",
+        "usage": "取消、非法操作、失败反馈"
+      }
+    ],
+    "card": [
+      {
+        "key": "card-pickup",
+        "file": "card-pickup.wav",
+        "usage": "抓起卡牌、选中卡牌"
+      },
+      {
+        "key": "card-play",
+        "file": "card-play.wav",
+        "usage": "出牌、飞牌、卡片消散"
+      }
+    ],
+    "combat": [
+      {
+        "key": "hit-light",
+        "file": "hit-light.wav",
+        "usage": "轻击、中小伤害"
+      },
+      {
+        "key": "hit-heavy",
+        "file": "hit-heavy.wav",
+        "usage": "重击、爆发、终结技"
+      },
+      {
+        "key": "boss-skill",
+        "file": "boss-skill.wav",
+        "usage": "怪兽技能起手、大招预热"
+      }
+    ],
+    "status": [
+      {
+        "key": "shield-gain",
+        "file": "shield-gain.wav",
+        "usage": "获得护盾、格挡强化"
+      },
+      {
+        "key": "energy-gain",
+        "file": "energy-gain.wav",
+        "usage": "回能、蓄能、能量溢出"
+      },
+      {
+        "key": "buff-apply",
+        "file": "buff-apply.wav",
+        "usage": "增益、永久增益、强化状态"
+      },
+      {
+        "key": "debuff-apply",
+        "file": "debuff-apply.wav",
+        "usage": "减益、中毒、虚弱、负面状态"
+      }
+    ],
+    "flow": [
+      {
+        "key": "turn-end",
+        "file": "turn-end.wav",
+        "usage": "结束回合、阶段切换"
+      }
+    ]
+  }
+}
